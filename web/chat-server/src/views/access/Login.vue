@@ -1,17 +1,18 @@
 <template>
-  <div class="login-wrap">
-    <div
-      class="login-window"
-      :style="{
-        boxShadow: `var(${'--el-box-shadow-dark'})`,
-      }"
-    >
-      <h2 class="login-item">登录</h2>
-      <el-form
-        :model="loginData"
-        label-width="70px"
-        class="demo-dynamic"
-      >
+  <AuthShell
+    eyebrow="密码登录"
+    title="欢迎回到 GoChat"
+    subtitle="像微信一样自然地开始聊天，连接朋友、群聊和每一次正在发生的对话。"
+    :features="['会话同步', '联系人管理', '轻盈桌面体验']"
+  >
+    <div class="auth-card auth-card--compact">
+      <div class="auth-card__header">
+        <span class="auth-card__eyebrow">Welcome back</span>
+        <h2 class="auth-card__title">欢迎回来</h2>
+        <p class="auth-card__subtitle">请输入您的账号和密码</p>
+      </div>
+
+      <el-form :model="loginData" label-position="top" class="auth-form auth-form--wechat">
         <el-form-item
           prop="telephone"
           label="账号"
@@ -23,8 +24,12 @@
             },
           ]"
         >
-          <el-input v-model="loginData.telephone" />
+          <el-input
+            v-model="loginData.telephone"
+            placeholder="请输入手机号"
+          />
         </el-form-item>
+
         <el-form-item
           prop="password"
           label="密码"
@@ -36,178 +41,206 @@
             },
           ]"
         >
-          <el-input type="password" v-model="loginData.password" />
+          <el-input
+            v-model="loginData.password"
+            type="password"
+            placeholder="请输入密码"
+            show-password
+          />
         </el-form-item>
       </el-form>
-      <div class="login-button-container">
-        <el-button type="primary" class="login-btn" @click="handleLogin"
-          >登录</el-button
-        >
+
+      <el-button type="primary" class="auth-submit-btn auth-submit-btn--lift" @click="handleLogin">
+        登录
+      </el-button>
+
+      <div class="auth-actions auth-actions--end">
+        <button class="auth-inline-link" @click="handleSmsLogin">验证码登录</button>
       </div>
 
-      <div class="go-register-button-container">
-        <button class="go-register-btn" @click="handleRegister">注册</button>
-        <button class="go-sms-btn" @click="handleSmsLogin">验证码登录</button>
+      <div class="auth-footer">
+        <span>还没有账号？</span>
+        <button class="auth-inline-link auth-inline-link--strong" @click="handleRegister">
+          立即注册
+        </button>
       </div>
     </div>
-  </div>
+  </AuthShell>
 </template>
 
-<script>
-import { reactive, toRefs } from "vue";
+<script setup>
+import { reactive } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { useStore } from "vuex";
-export default {
-  name: "Login",
-  setup() {
-    const data = reactive({
-      loginData: {
-        telephone: "",
-        password: "",
-      },
-    });
-    const router = useRouter();
-    const store = useStore();
-    const handleLogin = async () => {
-      try {
-        if (!data.loginData.telephone || !data.loginData.password) {
-          ElMessage.error("请填写完整登录信息。");
-          return;
-        }
-        if (!checkTelephoneValid()) {
-          ElMessage.error("请输入有效的手机号码。");
-          return;
-        }
-	console.log(store.state.backendUrl, store.state.wsUrl);
-        const response = await axios.post(
-          store.state.backendUrl + "/login",
-          data.loginData
-        );
-        console.log(response);
-        if (response.data.code == 200) {
-          if (response.data.data.status == 1) {
-            ElMessage.error("该账号已被封禁，请联系管理员。");
-            return;
-          }
-          try {
-            ElMessage.success(response.data.message);
-            if (!response.data.data.avatar.startsWith("http")) {
-              response.data.data.avatar =
-                store.state.backendUrl + response.data.data.avatar;
-            }
-            store.commit("setUserInfo", response.data.data);
-            // 准备创建websocket连接
-            const wsUrl =
-              store.state.wsUrl + "/wss?client_id=" + response.data.data.uuid;
-            console.log(wsUrl);
-            store.state.socket = new WebSocket(wsUrl);
-            store.state.socket.onopen = () => {
-              console.log("WebSocket连接已打开");
-            };
-            store.state.socket.onmessage = (message) => {
-              console.log("收到消息：", message.data);
-            };
-            store.state.socket.onclose = () => {
-              console.log("WebSocket连接已关闭");
-            };
-            store.state.socket.onerror = () => {
-              console.log("WebSocket连接发生错误");
-            };
-            router.push("/chat/sessionlist");
-          } catch (error) {
-            console.log(error);
-          }
-        } else {
-          ElMessage.error(response.data.message);
-        }
-      } catch (error) {
-        ElMessage.error(error);
-      }
-    };
-    const checkTelephoneValid = () => {
-      const regex = /^1[3456789]\d{9}$/;
-      return regex.test(data.loginData.telephone);
-    };
-    const handleRegister = () => {
-      router.push("/register");
-    };
-    const handleSmsLogin = () => {
-      router.push("/smsLogin");
-    };
+import AuthShell from "@/components/AuthShell.vue";
 
-    return {
-      ...toRefs(data),
-      router,
-      handleLogin,
-      handleRegister,
-      handleSmsLogin,
-    };
-  },
+const loginData = reactive({
+  telephone: "",
+  password: "",
+});
+
+const router = useRouter();
+const store = useStore();
+
+const handleLogin = async () => {
+  try {
+    if (!loginData.telephone || !loginData.password) {
+      ElMessage.error("请填写完整登录信息。");
+      return;
+    }
+    if (!checkTelephoneValid()) {
+      ElMessage.error("请输入有效的手机号码。");
+      return;
+    }
+    console.log(store.state.backendUrl, store.state.wsUrl);
+    const response = await axios.post(
+      store.state.backendUrl + "/login",
+      loginData
+    );
+    console.log(response);
+    if (response.data.code == 200) {
+      if (response.data.data.status == 1) {
+        ElMessage.error("该账号已被封禁，请联系管理员。");
+        return;
+      }
+      try {
+        ElMessage.success(response.data.message);
+        if (!response.data.data.avatar.startsWith("http")) {
+          response.data.data.avatar =
+            store.state.backendUrl + response.data.data.avatar;
+        }
+        store.commit("setUserInfo", response.data.data);
+        const wsUrl =
+          store.state.wsUrl + "/wss?client_id=" + response.data.data.uuid;
+        console.log(wsUrl);
+        store.state.socket = new WebSocket(wsUrl);
+        store.state.socket.onopen = () => {
+          console.log("WebSocket连接已打开");
+        };
+        store.state.socket.onmessage = (message) => {
+          console.log("收到消息：", message.data);
+        };
+        store.state.socket.onclose = () => {
+          console.log("WebSocket连接已关闭");
+        };
+        store.state.socket.onerror = () => {
+          console.log("WebSocket连接发生错误");
+        };
+        router.push("/chat/sessionlist");
+      } catch (error) {
+        console.log(error);
+      }
+    } else {
+      ElMessage.error(response.data.message);
+    }
+  } catch (error) {
+    ElMessage.error(error);
+  }
+};
+
+const checkTelephoneValid = () => {
+  const regex = /^1[3456789]\d{9}$/;
+  return regex.test(loginData.telephone);
+};
+
+const handleRegister = () => {
+  router.push("/register");
+};
+
+const handleSmsLogin = () => {
+  router.push("/smsLogin");
 };
 </script>
 
-<style>
-.login-wrap {
-  height: 100vh;
-  background-image: url("@/assets/img/chat_server_background.jpg");
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-
-.login-window {
-  background-color: rgb(255, 255, 255, 0.7);
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  padding: 30px 50px;
-  border-radius: 20px;
-  /*opacity: 0.7;*/
-}
-
-.login-item {
-  text-align: center;
-  margin-bottom: 20px;
-  color: #494949;
-}
-
-.login-button-container {
-  display: flex;
-  justify-content: center; /* 水平居中 */
-  margin-top: 20px; /* 可选，根据需要调整按钮与输入框之间的间距 */
+<style lang="scss" scoped>
+.auth-card--compact {
   width: 100%;
 }
 
-.login-btn,
-.login-btn:hover {
-  background-color: rgb(229, 132, 132);
-  border: none;
-  color: #ffffff;
-  font-weight: bold;
+.auth-form--wechat {
+  :deep(.el-form-item) {
+    margin-bottom: 22px;
+  }
+
+  :deep(.el-form-item__label) {
+    padding-bottom: 8px;
+    color: #111111;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  :deep(.el-input__wrapper) {
+    padding: 0 0 12px;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: inset 0 -1px 0 #dfe4e1;
+  }
+
+  :deep(.el-input__wrapper:hover) {
+    box-shadow: inset 0 -1px 0 #c6d0cb;
+  }
+
+  :deep(.el-input__wrapper.is-focus) {
+    box-shadow: inset 0 -2px 0 #07c160;
+  }
+
+  :deep(.el-input__inner) {
+    height: 42px;
+    color: #111111;
+    font-size: 15px;
+  }
+
+  :deep(.el-input__inner::placeholder) {
+    color: #a0a8a3;
+  }
+
+  :deep(.el-input__suffix-inner) {
+    color: #96a19b;
+  }
 }
 
-.go-register-button-container {
+.auth-actions {
   display: flex;
-  flex-direction: row-reverse;
-  margin-top: 10px;
+  margin-top: 16px;
 }
 
-.go-register-btn,
-.go-sms-btn {
-  background-color: rgba(255, 255, 255, 0);
+.auth-actions--end {
+  justify-content: flex-end;
+}
+
+.auth-footer {
+  margin-top: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #8a938d;
+  font-size: 14px;
+}
+
+.auth-inline-link {
+  padding: 0;
   border: none;
+  background: transparent;
+  color: #6b7470;
   cursor: pointer;
-  color: #d65b54;
-  font-weight: bold;
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-  margin-left: 10px;
+  font-size: 14px;
+  transition: color 0.2s ease;
 }
 
-.el-alert {
-  margin-top: 20px;
+.auth-inline-link:hover {
+  color: #07c160;
+}
+
+.auth-inline-link--strong {
+  color: #07c160;
+  font-weight: 600;
+}
+
+.auth-inline-link--strong:hover {
+  color: #06ad56;
 }
 </style>

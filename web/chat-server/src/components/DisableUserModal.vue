@@ -52,11 +52,15 @@
     </el-table>
     <div class="main-able-button-container">
       <el-button
-        style="background-color: rgb(252, 210.9, 210.9); margin-left: 20px" @click="disableUsers"
-        >禁用/全部禁用</el-button
+        class="soft-action-btn main-action-gap"
+        @click="disableUsers"
       >
-      <el-button style="background-color: rgb(252, 210.9, 210.9)" @click="ableUsers"
-        >启用/全部启用</el-button
+        禁用/全部禁用
+      </el-button
+      >
+      <el-button class="soft-action-btn" @click="ableUsers">
+        启用/全部启用
+      </el-button
       >
     </div>
   </div>
@@ -151,5 +155,9 @@ export default {
   display: flex;
   flex-direction: row-reverse;
   align-items: center;
+}
+
+.main-action-gap {
+  margin-left: 12px;
 }
 </style>

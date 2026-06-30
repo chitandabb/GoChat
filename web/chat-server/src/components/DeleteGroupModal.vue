@@ -41,10 +41,9 @@
       </el-table-column>
     </el-table>
     <div class="main-able-button-container">
-      <el-button
-        style="background-color: rgb(252, 210.9, 210.9);" @click="deleteGroups"
-        >删除/全部删除</el-button
-      >
+      <el-button class="soft-action-btn" @click="deleteGroups">
+        删除/全部删除
+      </el-button>
     </div>
   </div>
 </template>

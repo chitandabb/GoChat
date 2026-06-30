@@ -295,31 +295,48 @@ export default {
 <style scoped>
 .header-container {
   height: 70px;
-  border-bottom: 3px solid #ccc;
-  background-color: rgb(252, 210.9, 210.9);
-  border-top-right-radius: 30px;
-  border-top-left-radius: 30px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--go-border);
+  background: #f7faf8;
   display: flex;
   flex-direction: row;
   justify-content: space-between;
   align-items: center;
 }
 
-.el-menu {
-  width: 196px;
-  background-color: rgb(252, 210.9, 210.9);
+:deep(.el-menu) {
+  width: 100%;
+  background: #f6f8f7;
+  border-right: none;
+}
+
+:deep(.el-sub-menu__title) {
+  color: var(--go-text-strong);
+  font-weight: 600;
+  border-radius: 12px;
+}
+
+:deep(.el-menu-item) {
+  color: var(--go-text);
+  border-radius: 12px;
+}
+
+:deep(.el-menu-item:hover),
+:deep(.el-menu-item.is-active),
+:deep(.el-sub-menu__title:hover) {
+  background: #ebf2ee;
 }
 
 .el-menu-item {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: inherit;
 }
 
 .manager-aside-container {
   width: 200px;
-  border-right: 3px solid #ccc;
+  border-right: 1px solid var(--go-border);
   display: flex;
   flex-direction: column;
-  border-bottom-left-radius: 30px;
+  background: #f6f8f7;
 }
 
 .header-icon {
@@ -329,10 +346,9 @@ export default {
 }
 
 .header-title {
-  font-family: Arial, Helvetica, sans-serif;
   font-weight: bold;
-  color: rgb(37, 37, 37);
-  font-size: 30px;
+  color: var(--go-text-strong);
+  font-size: 22px;
 }
 
 .user-manager-icon {
@@ -341,8 +357,7 @@ export default {
 }
 
 .manager-user-title {
-  font-family: Arial, Helvetica, sans-serif;
-  color: rgb(37, 37, 37);
+  color: var(--go-text-strong);
 }
 
 .manager-user-icon {
@@ -352,8 +367,7 @@ export default {
 }
 
 .manager-group-title {
-  font-family: Arial, Helvetica, sans-serif;
-  color: rgb(37, 37, 37);
+  color: var(--go-text-strong);
 }
 
 .manager-group-icon {

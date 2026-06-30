@@ -1,80 +1,18 @@
 <template>
-  <div class="chat-wrap">
-    <div
-      class="chat-window"
-      :style="{
-        boxShadow: `var(${'--el-box-shadow-dark'})`,
-      }"
-    >
-      <el-container class="chat-window-container">
-        <el-aside class="aside-container">
-          <NavigationModal></NavigationModal>
-          <div class="sessionlist-container">
-            <div class="sessionlist-header">
-              <el-input
-                v-model="contactSearch"
-                class="contact-search-input"
-                placeholder="搜索会话"
-                size="small"
-                suffix-icon="Search"
-              />
-            </div>
-            <div class="contactlist-body">
-              <div class="contactlist-user">
-                <el-menu
-                  router
-                  unique-opened
-                  @open="handleShowUserSessionList"
-                  @close="handleHideUserSessionList"
-                >
-                  <el-sub-menu index="1">
-                    <template #title>
-                      <span class="sessionlist-title">用户</span>
-                    </template>
-                  </el-sub-menu>
-                  <el-menu-item
-                    v-for="user in userSessionList"
-                    :key="user.user_id"
-                    @click="handleToChatUser(user)"
-                  >
-                    <img :src="user.avatar" class="sessionlist-avatar" />
-                    {{ user.user_name }}
-                  </el-menu-item>
-                </el-menu>
-                <el-menu
-                  router
-                  unique-opened
-                  @open="handleShowGroupSessionList"
-                  @close="handleHideGroupSessionList"
-                >
-                  <el-sub-menu index="1">
-                    <template #title>
-                      <span class="sessionlist-title">群聊</span>
-                    </template>
-                  </el-sub-menu>
-                  <el-menu-item
-                    v-for="group in groupSessionList"
-                    :key="group.group_id"
-                    @click="handleToChatGroup(group)"
-                  >
-                    <img :src="group.avatar" class="sessionlist-avatar" />
-                    {{ group.group_name }}
-                  </el-menu-item>
-                </el-menu>
-              </div>
-            </div>
-          </div>
-        </el-aside>
-        <el-container class="chat-container">
-          <el-header>
+  <div class="chat-page-shell">
+    <el-header>
             <div class="chat-title" v-if="contactInfo.contact_avatar">
               <img
                 :src="contactInfo.contact_avatar"
-                style="width: 40px; height: 40px; margin-right: 10px"
+                class="chat-title-avatar"
               />
-              <h2 class="chat-name">{{ contactInfo.contact_name }}</h2>
+              <div class="chat-title-copy">
+                <h2 class="chat-name">{{ contactInfo.contact_name }}</h2>
+                <p class="chat-title-subtitle">{{ chatTitleMeta }}</p>
+              </div>
             </div>
             <div class="chat-title-right">
+              <span class="chat-status-pill">{{ chatStatusText }}</span>
               <Modal :isVisible="isUserContactInfoModalVisible">
                 <template v-slot:header>
                   <div class="userinfo-modal-quit-btn-container">
@@ -330,10 +268,9 @@
                             :before-upload="beforeAvatarUpload"
                           >
                             <template #trigger>
-                              <el-button
-                                style="background-color: rgb(252, 210.9, 210.9)"
-                                >上传图片</el-button
-                              >
+                              <el-button class="soft-action-btn">
+                                上传图片
+                              </el-button>
                             </template>
                           </el-upload>
                         </el-form-item>
@@ -344,7 +281,7 @@
                 <template v-slot:footer>
                   <div class="updategroupinfo-modal-footer">
                     <el-button
-                      style="background-color: rgb(252, 210.9, 210.9)"
+                      class="soft-action-btn"
                       @click="closeUpdateGroupInfoModal"
                     >
                       完成
@@ -504,14 +441,10 @@
                 </template>
               </SmallModal>
             </div>
-          </el-header>
-          <el-main class="main-container">
-            <el-scrollbar
-              max-height="332.5px"
-              style="height: 332.5px"
-              ref="scrollbarRef"
-            >
-              <div ref="innerRef">
+    </el-header>
+    <el-main class="main-container">
+      <el-scrollbar class="message-scrollbar" ref="scrollbarRef">
+              <div ref="innerRef" class="message-list">
                 <div
                   v-for="(messageItem, index) in messageList"
                   :key="index"
@@ -525,16 +458,7 @@
                     class="left-message"
                   >
                     <div class="left-message-left">
-                      <el-image
-                        :src="messageItem.send_avatar"
-                        style="
-                          width: 40px;
-                          height: 40px;
-                          margin-left: 10px;
-                          margin-right: 10px;
-                          margin-top: 10px;
-                        "
-                      >
+                      <el-image :src="messageItem.send_avatar" class="message-avatar">
                       </el-image>
                     </div>
 
@@ -561,16 +485,7 @@
                     class="left-message"
                   >
                     <div class="left-message-left">
-                      <el-image
-                        :src="messageItem.send_avatar"
-                        style="
-                          width: 40px;
-                          height: 40px;
-                          margin-left: 10px;
-                          margin-right: 10px;
-                          margin-top: 10px;
-                        "
-                      >
+                      <el-image :src="messageItem.send_avatar" class="message-avatar">
                       </el-image>
                     </div>
 
@@ -596,11 +511,9 @@
 
                         <div class="left-message-file-download">
                           <el-button
-                            style="
-                              background-color: rgb(252, 210.9, 210.9);
-                              margin-top: 20px;
-                            "
+                            class="soft-action-btn"
                             size="small"
+                            style="margin-top: 20px"
                             @click="downloadFile(messageItem.file_name)"
                           >
                             下载
@@ -610,14 +523,7 @@
                     </div>
                   </div>
 
-                  <div
-                    style="
-                      width: 100%;
-                      height: 100%;
-                      display: flex;
-                      flex-direction: row-reverse;
-                    "
-                  >
+                  <div class="message-self-wrap">
                     <div
                       v-if="
                         messageItem.send_id == userInfo.uuid &&
@@ -626,16 +532,7 @@
                       class="right-message"
                     >
                       <div class="right-message-right">
-                        <el-image
-                          :src="userInfo.avatar"
-                          style="
-                            width: 40px;
-                            height: 40px;
-                            margin-left: 10px;
-                            margin-right: 10px;
-                            margin-top: 10px;
-                          "
-                        >
+                        <el-image :src="userInfo.avatar" class="message-avatar">
                         </el-image>
                       </div>
 
@@ -648,7 +545,7 @@
                             {{ messageItem.created_at }}
                           </div>
                         </div>
-                        <div style="display: flex; flex-direction: row-reverse">
+                        <div class="message-self-content">
                           <div class="right-message-content">
                             {{ messageItem.content }}
                           </div>
@@ -663,16 +560,7 @@
                       class="right-message"
                     >
                       <div class="right-message-right">
-                        <el-image
-                          :src="userInfo.avatar"
-                          style="
-                            width: 40px;
-                            height: 40px;
-                            margin-left: 10px;
-                            margin-right: 10px;
-                            margin-top: 10px;
-                          "
-                        >
+                        <el-image :src="userInfo.avatar" class="message-avatar">
                         </el-image>
                       </div>
 
@@ -685,7 +573,7 @@
                             {{ messageItem.created_at }}
                           </div>
                         </div>
-                        <div style="display: flex; flex-direction: row-reverse">
+                        <div class="message-self-content">
                           <div class="right-message-file-container">
                             <div style="display: flex; flex-direction: row">
                               <div class="right-message-file-name">
@@ -706,8 +594,8 @@
                   </div>
                 </div>
               </div>
-            </el-scrollbar>
-            <div class="tool-bar">
+      </el-scrollbar>
+      <div class="tool-bar">
               <div class="tool-bar-left">
                 <el-tooltip
                   effect="customized"
@@ -917,45 +805,47 @@
                   </div>
                 </div>
               </div>
-            </div>
-          </el-main>
-          <el-footer>
+      </div>
+    </el-main>
+    <el-footer>
             <div class="chat-input">
               <el-input
                 v-model="chatMessage"
                 type="textarea"
                 show-word-limit
                 maxlength="500"
-                :autosize="{ minRows: 7.9, maxRows: 7 }"
-                placeholder="请输入内容"
+                :autosize="{ minRows: 5, maxRows: 6 }"
+                placeholder="输入消息，按 Enter 发送，Shift + Enter 换行"
+                @keydown.enter.exact.prevent="sendMessage"
               />
             </div>
             <div class="chat-send">
-              <el-button class="send-btn" @click="sendMessage">发送</el-button>
+              <el-button
+                class="send-btn"
+                :disabled="!canSendMessage"
+                @click="sendMessage"
+              >
+                发送
+              </el-button>
             </div>
-          </el-footer>
-        </el-container>
-      </el-container>
-    </div>
+    </el-footer>
   </div>
 </template>
 
 <script>
-import { reactive, toRefs, onMounted, ref, nextTick } from "vue";
-import { useRouter, onBeforeRouteUpdate } from "vue-router";
-import { useStore } from "vuex";
-import axios from "axios";
-import Modal from "@/components/Modal.vue";
-import SmallModal from "@/components/SmallModal.vue";
-import NavigationModal from "@/components/NavigationModal.vue";
-import { ElMessage, ElMessageBox, ElScrollbar } from "element-plus";
-import { ElNotification } from "element-plus";
+  import { computed, reactive, toRefs, onMounted, ref, nextTick } from "vue";
+  import { useRouter, onBeforeRouteUpdate } from "vue-router";
+  import { useStore } from "vuex";
+  import axios from "axios";
+  import Modal from "@/components/Modal.vue";
+  import SmallModal from "@/components/SmallModal.vue";
+  import { ElMessage, ElMessageBox, ElScrollbar } from "element-plus";
+  import { ElNotification } from "element-plus";
 export default {
   name: "ContactChat",
   components: {
     Modal,
     SmallModal,
-    NavigationModal,
   },
 
   setup() {
@@ -965,7 +855,6 @@ export default {
       chatMessage: "",
       chatName: "",
       userInfo: store.state.userInfo,
-      contactSearch: "",
       createGroupReq: {
         owner_id: "",
         name: "",
@@ -1011,8 +900,6 @@ export default {
       ownListReq: {
         owner_id: "",
       },
-      userSessionList: [],
-      groupSessionList: [],
       sessionId: "",
       messageList: [],
       innerRef: ref < HTMLDivElement > null,
@@ -1047,6 +934,31 @@ export default {
       ableToReceiveOrRejectCall: false,
       ableToStartCall: true,
     });
+
+    const isGroupChat = computed(
+      () => data.contactInfo.contact_id && data.contactInfo.contact_id[0] === "G"
+    );
+
+    const chatStatusText = computed(() => {
+      if (!data.contactInfo.contact_id) {
+        return "会话详情";
+      }
+      return isGroupChat.value
+        ? `${data.contactInfo.contact_member_cnt || 0} 位成员`
+        : "单人会话";
+    });
+
+    const chatTitleMeta = computed(() => {
+      if (!data.contactInfo.contact_id) {
+        return "打开一个会话开始聊天";
+      }
+      if (isGroupChat.value) {
+        return data.contactInfo.contact_notice || "点击右上角查看群聊详情";
+      }
+      return data.contactInfo.contact_signature || "点击右上角查看联系人资料";
+    });
+
+    const canSendMessage = computed(() => data.chatMessage.trim().length > 0);
     //这是/chat/:id 的id改变时会调用
     onBeforeRouteUpdate(async (to, from, next) => {
       await getChatContactInfo(to.params.id);
@@ -1327,64 +1239,6 @@ export default {
         console.log(error);
       }
     };
-
-    
-
-    const handleToChatUser = async (user) => {
-      router.push("/chat/" + user.user_id);
-    };
-
-    const handleToChatGroup = async (group) => {
-      router.push("/chat/" + group.group_id);
-    };
-
-    const handleShowUserSessionList = async () => {
-      try {
-        data.ownListReq.owner_id = data.userInfo.uuid;
-        const userSessionListRsp = await axios.post(
-          store.state.backendUrl + "/session/getUserSessionList",
-          data.ownListReq
-        );
-        if (userSessionListRsp.data.data) {
-          for (let i = 0; i < userSessionListRsp.data.data.length; i++) {
-            if (!userSessionListRsp.data.data[i].avatar.startsWith("http")) {
-              userSessionListRsp.data.data[i].avatar =
-                store.state.backendUrl + userSessionListRsp.data.data[i].avatar;
-            }
-          }
-        }
-        data.userSessionList = userSessionListRsp.data.data;
-      } catch (error) {
-        console.error(error);
-      }
-    };
-    const handleHideUserSessionList = () => {
-      data.userSessionList = [];
-    };
-    const handleShowGroupSessionList = async () => {
-      try {
-        data.ownListReq.owner_id = data.userInfo.uuid;
-        const groupSessionListRsp = await axios.post(
-          store.state.backendUrl + "/session/getGroupSessionList",
-          data.ownListReq
-        );
-        if (groupSessionListRsp.data.data) {
-          for (let i = 0; i < groupSessionListRsp.data.data.length; i++) {
-            if (!groupSessionListRsp.data.data[i].avatar.startsWith("http")) {
-              groupSessionListRsp.data.data[i].avatar =
-                store.state.backendUrl +
-                groupSessionListRsp.data.data[i].avatar;
-            }
-          }
-        }
-        data.groupSessionList = groupSessionListRsp.data.data;
-      } catch (error) {
-        console.error(error);
-      }
-    };
-    const handleHideGroupSessionList = () => {
-      data.groupSessionList = [];
-    };
     const preToDeleteSession = () => {
       try {
         ElMessageBox.confirm("确认删除该会话以及其聊天记录？", "Warning", {
@@ -1506,10 +1360,14 @@ export default {
       router.push("/chat/sessionlist");
     };
     const sendMessage = () => {
+      const content = data.chatMessage.trim();
+      if (!content) {
+        return;
+      }
       const chatMessageRequest = {
         session_id: data.sessionId,
         type: 0,
-        content: data.chatMessage,
+        content,
         url: "",
         send_id: data.userInfo.uuid,
         send_name: data.userInfo.nickname,
@@ -1618,6 +1476,9 @@ export default {
 
     const scrollToBottom = () => {
       nextTick(() => {
+        if (!data.innerRef || !data.scrollbarRef) {
+          return;
+        }
         const scrollHeight = data.innerRef.scrollHeight;
         console.log(scrollHeight);
         data.scrollbarRef.setScrollTop(scrollHeight);
@@ -2269,6 +2130,9 @@ export default {
 
     return {
       ...toRefs(data),
+      chatStatusText,
+      chatTitleMeta,
+      canSendMessage,
       router,
       handleCreateGroup,
       showUserContactInfoModal,
@@ -2277,12 +2141,6 @@ export default {
       quitGroupContactInfoModal,
       showAddGroupModal,
       quitAddGroupModal,
-      handleToChatUser,
-      handleToChatGroup,
-      handleShowUserSessionList,
-      handleShowGroupSessionList,
-      handleHideUserSessionList,
-      handleHideGroupSessionList,
       deleteSession,
       preToDeleteSession,
       preToDeleteContact,
@@ -2335,315 +2193,303 @@ export default {
 </script>
 
 <style scoped>
-.sessionlist-header {
+.chat-page-shell {
+  height: 100%;
   display: flex;
-  flex-direction: row;
-  width: 100%;
-  margin-top: 10px;
-  margin-bottom: 10px;
-}
-
-.contact-search-input {
-  width: 215px;
-  height: 30px;
-  margin-left: 5px;
-  margin-right: 2px;
-}
-
-.el-menu {
-  background-color: rgb(252, 210.9, 210.9);
-  width: 100%;
-}
-
-.el-menu-item {
-  background-color: rgb(255, 255, 255);
-  height: 45px;
-}
-
-.sessionlist-title {
-  font-family: Arial, Helvetica, sans-serif;
+  flex-direction: column;
 }
 
 h3 {
-  font-family: Arial, Helvetica, sans-serif;
-  color: rgb(69, 69, 68);
+  margin: 0;
+  color: var(--go-text-strong);
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .groupcontactinfo-modal-quit-btn-container,
 .userinfo-modal-quit-btn-container,
 .updategroupinfo-modal-quit-btn-container,
-.removegroupmember-modal-quit-btn-container {
-  height: 25px;
+.removegroupmember-modal-quit-btn-container,
+.modal-quit-btn-container {
   width: 100%;
   display: flex;
-  flex-direction: row-reverse;
+  justify-content: flex-end;
 }
 
 .groupcontactinfo-modal-quit-btn,
 .userinfo-modal-quit-btn,
 .updategroupinfo-modal-quit-btn,
-.removegroupmember-modal-quit-btn {
-  background-color: rgba(255, 255, 255, 0);
-  color: rgb(229, 25, 25);
-  padding: 15px;
+.removegroupmember-modal-quit-btn,
+.modal-quit-btn {
+  background: transparent;
+  color: #666;
+  padding: 10px;
   border: none;
   cursor: pointer;
-  position: fixed;
-  justify-content: center;
-  align-items: center;
 }
 
 .groupcontactinfo-modal-header-title,
 .userinfo-modal-header-title,
-.removegroupmember-modal-header-title {
-  height: 30px;
+.removegroupmember-modal-header-title,
+.updategroupinfo-modal-header-title,
+.modal-header-title {
   width: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
-}
-
-.updategroupinfo-modal-header-title {
-  margin-top: 10px;
-  height: 30px;
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.el-header {
-  padding: 10px;
-  display: flex;
-  flex-direction: row;
 }
 
 .chat-title {
   display: flex;
-  flex-direction: row;
   align-items: center;
-  width: 50%;
-  height: 100%;
+  gap: 12px;
+  min-width: 0;
+}
+
+.chat-title-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-title-subtitle {
+  margin: 0;
+  color: var(--go-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-title-right {
   display: flex;
-  flex-direction: row-reverse;
+  justify-content: flex-end;
   align-items: center;
-  width: 50%;
-  height: 100%;
-  margin-right: 10px;
-  color: rgb(201, 139, 139);
+  gap: 10px;
+  min-width: 0;
+  color: var(--go-text-muted);
 }
 
-.sessionlist-avatar {
-  width: 30px;
-  height: 30px;
-  margin-right: 20px;
+.chat-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(7, 193, 96, 0.08);
+  color: var(--go-accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chat-title-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 10px 18px rgba(16, 22, 18, 0.08);
+}
+
+.contactlist-avatar,
+.removegroupmembers-item-avatar {
+  width: 32px;
+  height: 32px;
+  margin-right: 12px;
+  border-radius: 10px;
+  object-fit: cover;
 }
 
 .setting-btn {
-  background-color: rgba(255, 255, 255, 0);
-  border: none;
+  width: 36px;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--go-text-muted);
   cursor: pointer;
-  color: rgb(201, 139, 139);
+  transition:
+    background-color 0.22s ease,
+    border-color 0.22s ease,
+    color 0.22s ease,
+    transform 0.22s ease;
+}
+
+.setting-btn:hover {
+  background: #fff;
+  border-color: var(--go-border);
+  color: var(--go-text-strong);
+  transform: translateY(-1px);
 }
 
 .modal-list {
-  height: 270px;
-  width: 90%;
-  margin-top: 5px;
+  width: 88%;
+  margin-top: 4px;
+}
+
+.message-scrollbar {
+  flex: 1;
+  min-height: 0;
+  background:
+    linear-gradient(180deg, rgba(240, 245, 240, 0.82) 0%, rgba(250, 252, 250, 0.96) 22%, rgba(255, 255, 255, 0.98) 100%);
+}
+
+.message-scrollbar :deep(.el-scrollbar__wrap) {
+  padding: 24px 26px 18px;
+}
+
+.message-scrollbar :deep(.el-scrollbar__view) {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.message-list,
+.message-item {
+  width: 100%;
+}
+
+.message-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.message-self-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.message-self-content {
+  display: flex;
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  width: 42px;
+  height: 42px;
+  margin: 8px 12px 0;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.left-message,
+.right-message {
+  width: min(80%, 580px);
+  display: flex;
+  gap: 12px;
 }
 
 .left-message {
-  width: 67%;
-  height: 100%;
-  display: flex;
-  flex-direction: row;
-  margin-bottom: 10px;
+  align-items: flex-start;
 }
 
 .right-message {
-  width: 67%;
-  height: 100%;
-  display: flex;
   flex-direction: row-reverse;
-  margin-bottom: 10px;
+  align-items: flex-start;
 }
 
-.left-message-left {
-  display: flex;
-  justify-content: center;
-}
-
+.left-message-left,
 .right-message-right {
   display: flex;
-  justify-content: center;
+  flex-shrink: 0;
 }
 
-.left-message-right-top {
+.left-message-right,
+.right-message-left {
   display: flex;
-  flex-direction: row;
-  margin-bottom: 5px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.left-message-right-top,
+.right-message-left-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .right-message-left-top {
-  display: flex;
-  flex-direction: row-reverse;
-  margin-bottom: 5px;
+  justify-content: flex-end;
 }
 
-.left-message-contactname {
-  font-family: Arial, Helvetica, sans-serif;
-  color: rgb(77, 61, 192);
-  font-weight: bold;
-  margin-top: 5px;
-  margin-right: 10px;
-  font-size: 15px;
-}
-
+.left-message-contactname,
 .right-message-contactname {
-  font-family: Arial, Helvetica, sans-serif;
-  color: rgb(77, 61, 192);
-  font-weight: bold;
-  margin-top: 5px;
-  margin-left: 10px;
-  font-size: 15px;
+  color: #59665e;
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.left-message-time {
-  font-family: Arial, Helvetica, sans-serif;
-  color: rgb(237, 161, 161);
-  margin-top: 5px;
-  font-size: 15px;
-}
-
+.left-message-time,
 .right-message-time {
-  font-family: Arial, Helvetica, sans-serif;
-  color: rgb(237, 161, 161);
-  margin-top: 5px;
-  font-size: 15px;
+  color: #91a097;
+  font-size: 12px;
+}
+
+.left-message-content,
+.right-message-content {
+  max-width: 420px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(217, 226, 219, 0.9);
+  color: var(--go-text);
+  font-size: 14px;
+  line-height: 1.7;
+  word-break: break-word;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 22px rgba(26, 47, 34, 0.05);
 }
 
 .left-message-content {
-  background-color: rgb(239, 255, 174);
-  color: rgb(74, 72, 72);
-  display: inline-block;
-  max-width: 400px;
-  white-space: normal; /* 允许文本换行 */
-  font-family: Arial, Helvetica, sans-serif;
-  border-radius: 6px;
-  padding: 3px;
-  padding-right: 5px;
-  font-size: 14px;
-  box-shadow: 0px 0px 5px 0px rgba(0, 0, 0, 0.2);
+  border-bottom-left-radius: 8px;
 }
 
 .right-message-content {
-  background-color: rgb(252, 210.9, 210.9);
-  color: rgb(74, 72, 72);
-  display: inline-block;
-  max-width: 400px;
-  white-space: normal; /* 允许文本换行 */
-  font-family: Arial, Helvetica, sans-serif;
-  border-radius: 6px;
-  padding: 3px;
-  padding-right: 5px;
-  font-size: 14px;
-  box-shadow: 0px 0px 5px 0px rgba(0, 0, 0, 0.2);
+  border-bottom-right-radius: 8px;
+  background: linear-gradient(180deg, #b4f28a 0%, #a6ec7d 100%);
+  border-color: var(--go-bubble-self-border);
 }
 
-.left-message-file-container {
-  background-color: #f9f9f9; /* 浅灰色背景 */
-  border: 1px solid #ddd; /* 浅灰色边框 */
-  border-radius: 8px; /* 圆角边框 */
-  padding: 16px; /* 内边距 */
-  width: 250px;
-  height: 100px;
-  margin: 0 auto; /* 水平居中 */
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* 轻微阴影效果 */
+.left-message-file-container,
+.right-message-file-container {
+  width: min(300px, 100%);
+  min-height: 96px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(217, 226, 219, 0.9);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 22px rgba(26, 47, 34, 0.05);
 }
 
 .right-message-file-container {
-  background-color: #f9f9f9; /* 浅灰色背景 */
-  border: 1px solid #ddd; /* 浅灰色边框 */
-  border-radius: 8px; /* 圆角边框 */
-  padding: 16px; /* 内边距 */
-  width: 250px;
-  height: 100px;
-  margin: 0 auto; /* 水平居中 */
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* 轻微阴影效果 */
+  background: var(--go-bubble-self-soft);
+  border-color: var(--go-bubble-self-border);
 }
 
+.left-message-file-name,
 .right-message-file-name {
-  font-size: 12px;
-  font-weight: bold;
-  color: #333;
-  margin-right: 5px;
-  font-family: Arial, Helvetica, sans-serif;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  color: var(--go-text-strong);
+  font-size: 14px;
+  font-weight: 500;
+  word-break: break-all;
 }
 
-.left-message-file-name {
-  font-size: 12px;
-  font-weight: bold;
-  color: #333;
-  margin-right: 5px;
-  font-family: Arial, Helvetica, sans-serif;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.right-message-file-size {
-  font-size: 11px;
-  color: rgb(176, 172, 172);
-  font-family: Arial, Helvetica, sans-serif;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-top: 4px;
-}
-
-.left-message-file-size {
-  font-size: 11px;
-  color: rgb(176, 172, 172);
-  font-family: Arial, Helvetica, sans-serif;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-top: 4px;
-}
-
+.left-message-file-size,
+.right-message-file-size,
 .right-message-file-download {
+  color: var(--go-text-muted);
   font-size: 12px;
-  font-family: Arial, Helvetica, sans-serif;
-  color: rgb(176, 172, 172);
-  margin-top: 20px;
 }
 
-.modal-quit-btn-container {
-  height: 30%;
-  width: 100%;
-  display: flex;
-  flex-direction: row-reverse;
-}
-
-.modal-quit-btn {
-  background-color: rgba(255, 255, 255, 0);
-  color: rgb(229, 25, 25);
-  padding: 15px;
-  border: none;
-  cursor: pointer;
-  position: fixed;
-  justify-content: center;
-  align-items: center;
+.left-message-file-download {
+  margin-top: 14px;
 }
 
 .modal-header {
-  height: 20%;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -2651,17 +2497,8 @@ h3 {
   align-items: center;
 }
 
-.modal-body {
-  height: 100%;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
+.modal-body,
 .addGroup-modal-body {
-  height: 70%;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -2670,151 +2507,150 @@ h3 {
 }
 
 .newcontact-modal-footer,
-.updategroupinfo-modal-footer {
-  height: 10%;
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
+.updategroupinfo-modal-footer,
 .modal-footer {
-  height: 25%;
   width: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
 }
 
-.modal-header-title {
-  height: 70%;
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.contactlist-avatar {
-  width: 30px;
-  height: 30px;
-  margin-right: 20px;
-}
-
-.addGroup-list {
-  width: 280px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-.addGroup-item {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  height: 40px;
-}
-
-.action-btn {
-  background-color: rgb(252, 210.9, 210.9);
-  border: none;
-  cursor: pointer;
-  justify-content: center;
-  align-items: center;
-  font-family: Arial, Helvetica, sans-serif;
-}
-
+.addGroup-list,
 .removegroupmembers-list {
-  width: 280px;
+  width: 100%;
+  max-width: 300px;
+  padding: 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  font-family: Arial, Helvetica, sans-serif;
 }
 
+.addGroup-item,
 .removegroupmembers-item {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
   width: 100%;
-  height: 40px;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f1f1f1;
 }
 
-.removegroupmembers-item-avatar {
-  height: 30px;
-  width: 30px;
-  margin-right: 20px;
+.addGroup-item:last-child,
+.removegroupmembers-item:last-child {
+  border-bottom: none;
 }
+
 .removegroupmembers-item-name {
+  color: var(--go-text-strong);
   font-size: 14px;
-  font-weight: bold;
-  font-family: Arial, Helvetica, sans-serif;
-  color: rgb(57, 57, 57);
+  font-weight: 500;
 }
-.removegroupmembers-button {
-  background-color: rgb(252, 210.9, 210.9);
+
+.action-btn.el-button,
+.removegroupmembers-button.el-button,
+.video-modal-footer-btn.el-button {
+  border: 1px solid var(--go-border);
+  background: #f4f7f5;
+  color: var(--go-text);
+  box-shadow: none;
+}
+
+.action-btn.el-button:hover,
+.removegroupmembers-button.el-button:hover,
+.video-modal-footer-btn.el-button:hover {
+  background: #ebebeb;
+  color: var(--go-text);
 }
 
 .video-modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
+  inset: 0;
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 2000;
-  border-radius: 30px;
+  background: rgba(11, 16, 13, 0.34);
+  backdrop-filter: blur(10px);
 }
 
 .video-modal-content {
-  background: #fff;
-  height: 500px;
-  border-radius: 20px;
-  width: 800px;
-  box-shadow: 0 2px 15px rgb(195, 8, 8);
+  width: min(720px, calc(100vw - 32px));
+  min-height: 420px;
+  padding: 22px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  border-radius: 24px;
+  border: 1px solid var(--go-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(246, 249, 246, 0.98) 100%);
+  box-shadow: var(--go-shadow);
 }
 
 .local-video,
 .remote-video {
-  width: 330px;
-  height: 320px;
+  width: min(300px, 42vw);
+  height: 240px;
+  border-radius: 16px;
+  border: 1px solid var(--go-border);
+  background: #111;
+  object-fit: cover;
 }
 
 .video-modal-header {
-  height: 80px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.video-modal-header h2 {
+  margin: 0;
+  color: var(--go-text-strong);
 }
 
 .video-modal-body {
-  height: 360px;
-  width: 700px;
+  width: 100%;
+  min-height: 280px;
+  padding: 14px;
   display: flex;
   justify-content: center;
   align-items: center;
-  box-shadow: 0 2px 15px rgb(250, 65, 109);
-  border-radius: 20px;
+  gap: 14px;
+  border-radius: 18px;
+  border: 1px solid #e6ede8;
+  background: #f4f7f4;
 }
 
 .video-modal-footer {
-  height: 80px;
   width: 100%;
+  padding-top: 14px;
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   justify-content: center;
+  gap: 8px;
 }
 
-.video-modal-footer-btn {
-  background-color: rgb(252, 210.9, 210.9);
+@media (max-width: 900px) {
+  .chat-title-right {
+    margin-left: auto;
+  }
+
+  .left-message,
+  .right-message {
+    width: min(88%, 620px);
+  }
+
+  .video-modal-body {
+    flex-direction: column;
+  }
+
+  .local-video,
+  .remote-video {
+    width: 100%;
+    max-width: 360px;
+    height: 220px;
+  }
 }
 </style>

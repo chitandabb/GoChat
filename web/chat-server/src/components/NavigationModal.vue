@@ -1,7 +1,7 @@
 <template>
   <div class="navigation-bar">
     <div class="up-bar">
-      <button class="avatar-btn">
+      <button class="avatar-btn" @click="handleToOwnInfo">
         <el-avatar :src="userInfo.avatar" />
       </button>
     </div>
@@ -13,7 +13,11 @@
         hide-after="0"
         enterable="false"
       >
-        <button class="icon-btn" @click="handleToSessionList">
+        <button
+          class="icon-btn"
+          :class="{ 'is-active': isRouteActive('/chat/sessionlist') || isRouteActive('/chat/') }"
+          @click="handleToSessionList"
+        >
           <el-icon>
             <ChatRound />
           </el-icon>
@@ -26,48 +30,13 @@
         hide-after="0"
         enterable="false"
       >
-        <button class="icon-btn" @click="handleToContactList">
+        <button
+          class="icon-btn"
+          :class="{ 'is-active': isRouteActive('/chat/contactlist') }"
+          @click="handleToContactList"
+        >
           <el-icon>
             <User />
-          </el-icon>
-        </button>
-      </el-tooltip>
-      <el-tooltip
-        effect="customized"
-        content="朋友圈"
-        placement="left"
-        hide-after="0"
-        enterable="false"
-      >
-        <button class="icon-btn">
-          <el-icon>
-            <Share />
-          </el-icon>
-        </button>
-      </el-tooltip>
-      <el-tooltip
-        effect="customized"
-        content="我的收藏"
-        placement="left"
-        hide-after="0"
-        enterable="false"
-      >
-        <button class="icon-btn">
-          <el-icon>
-            <Star />
-          </el-icon>
-        </button>
-      </el-tooltip>
-      <el-tooltip
-        effect="customized"
-        content="搜索"
-        placement="left"
-        hide-after="0"
-        enterable="false"
-      >
-        <button class="icon-btn">
-          <el-icon>
-            <Search />
           </el-icon>
         </button>
       </el-tooltip>
@@ -106,7 +75,11 @@
         hide-after="0"
         enterable="false"
       >
-        <button class="icon-btn" @click="handleToOwnInfo">
+        <button
+          class="icon-btn"
+          :class="{ 'is-active': isRouteActive('/chat/owninfo') }"
+          @click="handleToOwnInfo"
+        >
           <el-icon><HomeFilled /></el-icon>
         </button>
       </el-tooltip>
@@ -115,7 +88,7 @@
 </template>
 
 <script>
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useStore } from "vuex";
 import { ElMessage } from "element-plus";
 import { reactive, toRefs } from "vue";
@@ -124,10 +97,17 @@ export default {
   name: "NavigationModal",
   setup() {
     const router = useRouter();
+    const route = useRoute();
     const store = useStore();
     const data = reactive({
       userInfo: store.state.userInfo,
     });
+    const isRouteActive = (pathPrefix) => {
+      if (pathPrefix === "/chat/") {
+        return route.path.startsWith("/chat/") && route.path !== "/chat/contactlist" && route.path !== "/chat/owninfo";
+      }
+      return route.path.startsWith(pathPrefix);
+    };
 
     const handleToContactList = () => {
       router.push("/chat/contactlist");
@@ -168,6 +148,7 @@ export default {
       handleToOwnInfo,
       logout,
       handleToManager,
+      isRouteActive,
     };
   },
 };

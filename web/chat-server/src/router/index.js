@@ -1,68 +1,88 @@
-import { createRouter, createWebHistory } from 'vue-router'
-import store from '../store/index.js'
+import { createRouter, createWebHistory } from "vue-router";
+import store from "../store/index.js";
+import Login from "../views/access/Login.vue";
+import SmsLogin from "../views/access/SmsLogin.vue";
+import Register from "../views/access/Register.vue";
+import ChatLayout from "../views/chat/ChatLayout.vue";
+import OwnInfo from "../views/chat/user/OwnInfo.vue";
+import ContactList from "../views/chat/contact/ContactList.vue";
+import ContactChat from "../views/chat/contact/ContactChat.vue";
+import SessionList from "../views/chat/session/SessionList.vue";
+import Manager from "../views/manager/Manager.vue";
 
 const routes = [
   {
-    path: '/',
-    redirect: { name: 'Login' }
+    path: "/",
+    redirect: { name: "Login" },
   },
   {
-    path: '/login',
-    name: 'Login',
-    component: () => import('../views/access/Login.vue')
+    path: "/login",
+    name: "Login",
+    component: Login,
   },
   {
-    path: '/smsLogin',
-    name: 'smsLogin',
-    component: () => import('../views/access/SmsLogin.vue')
+    path: "/smsLogin",
+    name: "smsLogin",
+    component: SmsLogin,
   },
   {
-    path: '/register',
-    name: 'Register',
-    component: () => import('../views/access/Register.vue')
+    path: "/register",
+    name: "Register",
+    component: Register,
   },
   {
-    path: '/chat/owninfo',
-    name: 'OwnInfo',
-    component: () => import('../views/chat/user/OwnInfo.vue')
+    path: "/chat",
+    component: ChatLayout,
+    redirect: { name: "SessionList" },
+    children: [
+      {
+        path: "owninfo",
+        name: "OwnInfo",
+        component: OwnInfo,
+      },
+      {
+        path: "contactlist",
+        name: "ContactList",
+        component: ContactList,
+      },
+      {
+        path: "sessionlist",
+        name: "SessionList",
+        component: SessionList,
+      },
+      {
+        path: ":id",
+        name: "ContactChat",
+        component: ContactChat,
+      },
+    ],
   },
   {
-    path: '/chat/contactlist',
-    name: 'ContactList',
-    component: () => import('../views/chat/contact/ContactList.vue')
+    path: "/manager",
+    name: "Manager",
+    component: Manager,
   },
-  {
-    path: '/chat/:id',
-    name: 'ContactChat',
-    component: () => import('../views/chat/contact/ContactChat.vue')
-  },
-  {
-    path: '/chat/sessionList',
-    name: 'SessionList',
-    component: () => import('../views/chat/session/SessionList.vue')
-  },
-  {
-    path: '/manager',
-    name: 'Manager',
-    component: () => import('../views/manager/Manager.vue')
-  }
-]
+];
 
 const router = createRouter({
   history: createWebHistory(),
-  routes
+  routes,
 });
 
 router.beforeEach((to, from, next) => {
   if (!store.state.userInfo.uuid) {
-    if (to.path === '/login' || to.path === '/register' || to.path === '/smsLogin') {
-      next()
-      return
+    if (
+      to.path === "/login" ||
+      to.path === "/register" ||
+      to.path === "/smsLogin"
+    ) {
+      next();
+      return;
     }
-    next('/login')
+    next("/login");
   } else {
-    next()
+    next();
   }
-})
+});
 
-export default router
+export default router;

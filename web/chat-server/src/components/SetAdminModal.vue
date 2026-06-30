@@ -41,11 +41,16 @@
       </el-table-column>
     </el-table>
     <div class="main-able-button-container">
-      <el-button style="background-color: rgb(252, 210.9, 210.9); margin-left: 20px;" @click="setAdmin(1)"
-        >设置/全部设置为管理员</el-button
+      <el-button
+        class="soft-action-btn main-action-gap"
+        @click="setAdmin(1)"
       >
-      <el-button style="background-color: rgb(252, 210.9, 210.9)" @click="setAdmin(0)"
-        >取消/全部取消管理员</el-button
+        设置/全部设置为管理员
+      </el-button
+      >
+      <el-button class="soft-action-btn" @click="setAdmin(0)">
+        取消/全部取消管理员
+      </el-button
       >
     </div>
   </div>
@@ -126,5 +131,9 @@ export default {
   display: flex;
   flex-direction: row-reverse;
   align-items: center;
+}
+
+.main-action-gap {
+  margin-left: 12px;
 }
 </style>

@@ -7,6 +7,7 @@
         placeholder="搜索联系人/群聊"
         size="small"
         suffix-icon="Search"
+        clearable
       />
       <div class="contactlist-header-right">
         <el-dropdown placement="bottom" trigger="click">
@@ -262,10 +263,7 @@
                       :before-upload="beforeFileUpload"
                     >
                       <template #trigger>
-                        <el-button
-                          style="background-color: rgb(252, 210.9, 210.9)"
-                          >上传图片</el-button
-                        >
+                        <el-button class="soft-action-btn">上传图片</el-button>
                       </template>
                     </el-upload>
                   </el-form-item>
@@ -288,16 +286,22 @@
         <el-menu
           router
           unique-opened
+          :default-openeds="['contacts']"
           @open="handleShowUserList"
           @close="handleHideUserList"
         >
-          <el-sub-menu index="1">
+          <el-sub-menu index="contacts">
             <template #title>
-              <span class="contactlist-user-title">联系人</span>
+              <div class="contactlist-title-row">
+                <span class="contactlist-user-title">联系人</span>
+                <span class="contactlist-count">
+                  {{ filteredContactUserList.length }}
+                </span>
+              </div>
             </template>
           </el-sub-menu>
           <el-menu-item
-            v-for="user in contactUserList"
+            v-for="user in filteredContactUserList"
             :key="user.user_id"
             @click="handleToChatUser(user)"
             class="contactlist-user-menu-item"
@@ -321,46 +325,79 @@
               </template>
             </el-dropdown>
           </el-menu-item>
+          <el-menu-item
+            v-if="!filteredContactUserList.length"
+            disabled
+            class="menu-empty-item"
+          >
+            没有匹配的联系人
+          </el-menu-item>
         </el-menu>
 
         <el-menu
           router
           unique-opened
+          :default-openeds="['owned-groups']"
           @open="handleShowMyGroupList"
           @close="handleHideMyGroupList"
         >
-          <el-sub-menu index="1">
+          <el-sub-menu index="owned-groups">
             <template #title>
-              <span class="contactlist-user-title">我创建的群聊</span>
+              <div class="contactlist-title-row">
+                <span class="contactlist-user-title">我创建的群聊</span>
+                <span class="contactlist-count">
+                  {{ filteredMyGroupList.length }}
+                </span>
+              </div>
             </template>
           </el-sub-menu>
           <el-menu-item
-            v-for="group in myGroupList"
+            v-for="group in filteredMyGroupList"
             :key="group.group_id"
             @click="handleToChatGroup(group)"
           >
             <img :src="group.avatar" class="contactlist-avatar" />
             {{ group.group_name }}
           </el-menu-item>
+          <el-menu-item
+            v-if="!filteredMyGroupList.length"
+            disabled
+            class="menu-empty-item"
+          >
+            没有匹配的群聊
+          </el-menu-item>
         </el-menu>
         <el-menu
           router
           unique-opened
+          :default-openeds="['joined-groups']"
           @open="handleShowMyJoinedGroupList"
           @close="handleHideMyJoinedGroupList"
         >
-          <el-sub-menu index="1">
+          <el-sub-menu index="joined-groups">
             <template #title>
-              <span class="contactlist-user-title">我加入的群聊</span>
+              <div class="contactlist-title-row">
+                <span class="contactlist-user-title">我加入的群聊</span>
+                <span class="contactlist-count">
+                  {{ filteredMyJoinedGroupList.length }}
+                </span>
+              </div>
             </template>
           </el-sub-menu>
           <el-menu-item
-            v-for="group in myJoinedGroupList"
+            v-for="group in filteredMyJoinedGroupList"
             :key="group.group_id"
             @click="handleToChatGroup(group)"
           >
             <img :src="group.avatar" class="contactlist-avatar" />
             {{ group.group_name }}
+          </el-menu-item>
+          <el-menu-item
+            v-if="!filteredMyJoinedGroupList.length"
+            disabled
+            class="menu-empty-item"
+          >
+            没有匹配的群聊
           </el-menu-item>
         </el-menu>
       </div>
@@ -369,7 +406,7 @@
 </template>
 
 <script>
-import { reactive, toRefs, onMounted } from "vue";
+import { computed, onMounted, reactive, toRefs } from "vue";
 import { useRouter } from "vue-router";
 import { useStore } from "vuex";
 import axios from "axios";
@@ -378,9 +415,6 @@ import Modal from "./Modal.vue";
 import SmallModal from "./SmallModal.vue";
 export default {
   name: "ContactListModal",
-  props: {
-    isVisible: true,
-  },
   components: {
     Modal,
     SmallModal,
@@ -389,8 +423,6 @@ export default {
     const router = useRouter();
     const store = useStore();
     const data = reactive({
-      chatMessage: "",
-      chatName: "",
       userInfo: store.state.userInfo,
       contactSearch: "",
       createGroupReq: {
@@ -415,12 +447,58 @@ export default {
         owner_id: "",
       },
       newContactList: [],
-      applyContent: "",
       uploadRef: null,
       uploadPath: store.state.backendUrl + "/message/uploadAvatar",
       fileList: [],
-      cnt: 0,
+      loadedUserList: false,
+      loadedMyGroupList: false,
+      loadedMyJoinedGroupList: false,
+      loadingUserList: false,
+      loadingMyGroupList: false,
+      loadingMyJoinedGroupList: false,
     });
+
+    const matchesSearch = (values) => {
+      const keyword = data.contactSearch.trim().toLowerCase();
+      if (!keyword) {
+        return true;
+      }
+      return values.some((value) =>
+        String(value || "")
+          .toLowerCase()
+          .includes(keyword)
+      );
+    };
+
+    const filteredContactUserList = computed(() =>
+      data.contactUserList.filter((user) =>
+        matchesSearch([user.user_name, user.user_id])
+      )
+    );
+
+    const filteredMyGroupList = computed(() =>
+      data.myGroupList.filter((group) =>
+        matchesSearch([group.group_name, group.group_id])
+      )
+    );
+
+    const filteredMyJoinedGroupList = computed(() =>
+      data.myJoinedGroupList.filter((group) =>
+        matchesSearch([group.group_name, group.group_id])
+      )
+    );
+
+    const normalizeAvatarList = (list = []) =>
+      list.map((item) => {
+        if (item.avatar && !item.avatar.startsWith("http")) {
+          return {
+            ...item,
+            avatar: store.state.backendUrl + item.avatar,
+          };
+        }
+        return item;
+      });
+
     const handleUploadSuccess = () => {
       ElMessage.success("头像上传成功");
       data.fileList = [];
@@ -452,6 +530,10 @@ export default {
           store.state.backendUrl + "/group/createGroup",
           data.createGroupReq
         );
+        if (response.data.code == 200) {
+          data.loadedMyGroupList = false;
+          await handleShowMyGroupList();
+        }
       } catch (error) {
         console.error(error);
       }
@@ -561,76 +643,68 @@ export default {
       }
     };
     const handleShowUserList = async () => {
+      if (data.loadedUserList || data.loadingUserList) {
+        return;
+      }
+      data.loadingUserList = true;
       try {
         data.ownListReq.owner_id = data.userInfo.uuid;
         const getUserListRsp = await axios.post(
           store.state.backendUrl + "/contact/getUserList",
           data.ownListReq
         );
-        if (getUserListRsp.data.data) {
-          for (let i = 0; i < getUserListRsp.data.data.length; i++) {
-            if (!getUserListRsp.data.data[i].avatar.startsWith("http")) {
-              getUserListRsp.data.data[i].avatar =
-                store.state.backendUrl + getUserListRsp.data.data[i].avatar;
-            }
-          }
-        }
-        data.contactUserList = getUserListRsp.data.data;
+        data.contactUserList = normalizeAvatarList(getUserListRsp.data.data || []);
+        data.loadedUserList = true;
       } catch (error) {
         console.error(error);
+      } finally {
+        data.loadingUserList = false;
       }
     };
-    const handleHideUserList = () => {
-      data.contactUserList = [];
-    };
+    const handleHideUserList = () => {};
 
     const handleShowMyGroupList = async () => {
+      if (data.loadedMyGroupList || data.loadingMyGroupList) {
+        return;
+      }
+      data.loadingMyGroupList = true;
       try {
         data.ownListReq.owner_id = data.userInfo.uuid;
         const loadMyGroupRsp = await axios.post(
           store.state.backendUrl + "/group/loadMyGroup",
           data.ownListReq
         );
-        if (loadMyGroupRsp.data.data) {
-          for (let i = 0; i < loadMyGroupRsp.data.data.length; i++) {
-            if (!loadMyGroupRsp.data.data[i].avatar.startsWith("http")) {
-              loadMyGroupRsp.data.data[i].avatar =
-                store.state.backendUrl + loadMyGroupRsp.data.data[i].avatar;
-            }
-          }
-        }
-        data.myGroupList = loadMyGroupRsp.data.data;
+        data.myGroupList = normalizeAvatarList(loadMyGroupRsp.data.data || []);
+        data.loadedMyGroupList = true;
       } catch (error) {
         console.error(error);
+      } finally {
+        data.loadingMyGroupList = false;
       }
     };
-    const handleHideMyGroupList = () => {
-      data.myGroupList = [];
-    };
+    const handleHideMyGroupList = () => {};
     const handleShowMyJoinedGroupList = async () => {
+      if (data.loadedMyJoinedGroupList || data.loadingMyJoinedGroupList) {
+        return;
+      }
+      data.loadingMyJoinedGroupList = true;
       try {
         data.ownListReq.owner_id = data.userInfo.uuid;
         const loadMyJoinedGroupRsp = await axios.post(
           store.state.backendUrl + "/contact/loadMyJoinedGroup",
           data.ownListReq
         );
-        if (loadMyJoinedGroupRsp.data.data) {
-          for (let i = 0; i < loadMyJoinedGroupRsp.data.data.length; i++) {
-            if (!loadMyJoinedGroupRsp.data.data[i].avatar.startsWith("http")) {
-              loadMyJoinedGroupRsp.data.data[i].avatar =
-                store.state.backendUrl +
-                loadMyJoinedGroupRsp.data.data[i].avatar;
-            }
-          }
-        }
-        data.myJoinedGroupList = loadMyJoinedGroupRsp.data.data;
+        data.myJoinedGroupList = normalizeAvatarList(
+          loadMyJoinedGroupRsp.data.data || []
+        );
+        data.loadedMyJoinedGroupList = true;
       } catch (error) {
         console.error(error);
+      } finally {
+        data.loadingMyJoinedGroupList = false;
       }
     };
-    const handleHideMyJoinedGroupList = () => {
-      data.myJoinedGroupList = [];
-    };
+    const handleHideMyJoinedGroupList = () => {};
 
     const handleToChatUser = async (user) => {
       try {
@@ -732,6 +806,8 @@ export default {
           data.newContactList = data.newContactList.filter(
             (c) => c.contact_id !== contactId
           );
+          data.loadedUserList = false;
+          await handleShowUserList();
         } else {
           ElMessage.error(rsp.data.message);
         }
@@ -753,6 +829,8 @@ export default {
         if (rsp.data.code == 200) {
           ElMessage.success(rsp.data.message);
           data.isApplyContactModalVisible = false;
+          data.loadedMyJoinedGroupList = false;
+          await handleShowMyJoinedGroupList();
         } else {
           ElMessage.error(rsp.data.message);
         }
@@ -829,6 +907,8 @@ export default {
         if (rsp.data.code == 200) {
           ElMessage.success(rsp.data.message);
           console.log(rsp.data.message);
+          data.loadedUserList = false;
+          await handleShowUserList();
         } else if (rsp.data.code == 400) {
           ElMessage.warning(rsp.data.message);
           console.log(rsp.data.message);
@@ -842,8 +922,28 @@ export default {
       }
     };
 
+    const preloadContactLists = async () => {
+      try {
+        await Promise.all([
+          handleShowUserList(),
+          handleShowMyGroupList(),
+          handleShowMyJoinedGroupList(),
+        ]);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    onMounted(() => {
+      preloadContactLists();
+    });
+
     return {
       ...toRefs(data),
+      filteredContactUserList,
+      filteredMyGroupList,
+      filteredMyJoinedGroupList,
+      preloadContactLists,
       router,
       handleCreateGroup,
       showCreateGroupModal,
@@ -874,96 +974,145 @@ export default {
 };
 </script>
 
-<style>
+<style scoped>
 .contactlist-header {
   display: flex;
-  flex-direction: row;
-  margin-top: 10px;
-  margin-bottom: 10px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .contact-search-input {
-  width: 185px;
-  height: 30px;
-  margin-left: 5px;
-  margin-right: 5px;
+  width: 100%;
+}
+
+.contact-search-input :deep(.el-input__wrapper) {
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .contactlist-header-right {
-  width: 40px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   display: flex;
   justify-content: center;
   align-items: center;
 }
 
 .create-group-btn {
-  background-color: rgb(252, 210.9, 210.9);
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
   cursor: pointer;
-  border: none;
-  height: 100%;
-  width: 30px;
-  height: 30px;
+  border: 1px solid var(--go-border);
   display: flex;
   justify-content: center;
   align-items: center;
-  border-radius: 10px;
+  background: #fff;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.create-group-btn:hover {
+  background: #f3f7f4;
+  border-color: #ccd7d0;
 }
 
 .create-group-icon {
-  width: 15px;
-  height: 15px;
+  width: 18px;
+  height: 18px;
 }
 
-.el-menu {
-  background-color: rgb(252, 210.9, 210.9);
-  width: 101%;
+:deep(.el-menu) {
+  width: 100%;
+  border-right: none;
+  background: transparent;
 }
 
-.el-menu-item {
-  background-color: rgb(255, 255, 255);
-  height: 45px;
+:deep(.el-sub-menu__title) {
+  height: 42px;
+  margin-bottom: 6px;
+  padding-left: 12px;
+  border-radius: 14px;
+  color: var(--go-text);
+  font-weight: 600;
+}
+
+:deep(.el-menu-item) {
+  height: 44px;
+  margin-bottom: 4px;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--go-text);
+  box-shadow: none;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+:deep(.el-sub-menu__title:hover),
+:deep(.el-menu-item:hover),
+:deep(.el-menu-item.is-active) {
+  background: #eaf1ec;
+  color: var(--go-text-strong);
 }
 
 .contactlist-user-title {
-  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.contactlist-title-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.contactlist-count {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(7, 193, 96, 0.08);
+  color: var(--go-accent-strong);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 h3 {
-  font-family: Arial, Helvetica, sans-serif;
-  color: rgb(69, 69, 68);
+  margin: 0;
+  color: var(--go-text-strong);
 }
 
 .modal-quit-btn-container {
-  height: 30%;
   width: 100%;
   display: flex;
-  flex-direction: row-reverse;
+  justify-content: flex-end;
 }
 
 .modal-quit-btn {
-  background-color: rgba(255, 255, 255, 0);
-  color: rgb(229, 25, 25);
-  padding: 15px;
+  background: transparent;
+  color: #7d8881;
+  padding: 12px;
   border: none;
   cursor: pointer;
-  position: fixed;
-  justify-content: center;
-  align-items: center;
 }
 
 .modal-header {
-  height: 20%;
   width: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  /*background-color:aqua;*/
 }
 
 .modal-body {
-  height: 55%;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -972,7 +1121,6 @@ h3 {
 }
 
 .creatgroup-modal-body {
-  height: 75%;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -981,7 +1129,6 @@ h3 {
 }
 
 .newcontact-modal-body {
-  height: 70%;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -990,7 +1137,6 @@ h3 {
 }
 
 .newcontact-modal-footer {
-  height: 10%;
   width: 100%;
   display: flex;
   justify-content: center;
@@ -998,7 +1144,6 @@ h3 {
 }
 
 .modal-footer {
-  height: 25%;
   width: 100%;
   display: flex;
   justify-content: center;
@@ -1006,7 +1151,6 @@ h3 {
 }
 
 .creategroup-modal-footer {
-  height: 20%;
   width: 100%;
   display: flex;
   justify-content: center;
@@ -1014,7 +1158,6 @@ h3 {
 }
 
 .modal-header-title {
-  height: 70%;
   width: 100%;
   display: flex;
   justify-content: center;
@@ -1022,17 +1165,21 @@ h3 {
 }
 
 .contactlist-avatar {
-  width: 30px;
-  height: 30px;
-  margin-right: 20px;
+  width: 32px;
+  height: 32px;
+  margin-right: 12px;
+  border-radius: 10px;
+  object-fit: cover;
 }
 
 .newcontact-list {
-  width: 280px;
+  width: 100%;
+  max-width: 300px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  font-family: Arial, Helvetica, sans-serif;
+  align-items: stretch;
+  gap: 8px;
+  padding: 4px 0;
 }
 
 .newcontact-item {
@@ -1041,16 +1188,19 @@ h3 {
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  height: 40px;
+  min-height: 54px;
+  padding: 8px 0;
+  border-bottom: 1px solid #eff3f0;
 }
 
 .action-btn {
-  background-color: rgb(252, 210.9, 210.9);
-  border: none;
+  border: 1px solid var(--go-border);
+  border-radius: 10px;
   cursor: pointer;
   justify-content: center;
   align-items: center;
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--go-text);
+  background: #f4f7f5;
 }
 
 .contactlist-user-menu-item {
@@ -1059,17 +1209,25 @@ h3 {
 }
 
 .contactlist-user-item {
-  width: 221px;
-  height: 45px;
+  width: 100%;
+  height: 44px;
   display: flex;
   align-items: center;
-  color: rgba(43, 42, 42, 0.893);
+  color: var(--go-text);
 }
 
 .contactlist-user-avatar {
-  width: 30px;
-  height: 30px;
-  margin-left: 20px;
-  margin-right: 20px;
+  width: 32px;
+  height: 32px;
+  margin-left: 12px;
+  margin-right: 12px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+:deep(.el-menu-item.menu-empty-item) {
+  justify-content: flex-start;
+  color: var(--go-text-soft);
+  cursor: default;
 }
 </style>

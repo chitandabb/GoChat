@@ -16,7 +16,10 @@
 export default {
   name: "Modal",
   props: {
-    isVisible: false,
+    isVisible: {
+      type: Boolean,
+      default: false,
+    },
   },
 };
 </script>
@@ -28,24 +31,38 @@ export default {
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
+  background: rgba(17, 23, 20, 0.24);
+  backdrop-filter: blur(8px);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 2000;
-  border-radius: 30px;
 }
 
 .modal-content {
-  background: #fff;
-  height: 400px;
-  border-radius: 20px;
-  width: 500px;
-  box-shadow: 0 2px 15px rgb(195, 8, 8);
+  width: min(500px, calc(100vw - 32px));
+  max-height: calc(100vh - 40px);
+  min-height: 300px;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid var(--go-border);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: var(--go-shadow);
   display: flex;
   flex-direction: column;
   align-items: center;
-  
+  animation: modal-rise 0.22s ease-out;
 }
 
+@keyframes modal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
 </style>
