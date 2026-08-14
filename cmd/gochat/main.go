@@ -45,8 +45,10 @@ func main() {
 				zlog.Fatal("tlsEnabled=true requires tlsCertFile and tlsKeyFile")
 				return
 			}
+			// https模式
 			err = https_server.GE.RunTLS(serverAddr, conf.ServerConfig.TLSCertFile, conf.ServerConfig.TLSKeyFile)
 		} else {
+			// http模式
 			err = https_server.GE.Run(serverAddr)
 		}
 		if err != nil {
@@ -59,7 +61,7 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	// 等待信号
+	// 等待信号, 主线程阻塞挂起,等待提出信号
 	<-quit
 
 	// 5. 进入关闭流程，按启动时相反的顺序回收资源。
@@ -71,11 +73,14 @@ func main() {
 
 	zlog.Info("关闭服务器...")
 
-	// 删除所有Redis键
-	if err := myredis.DeleteAllRedisKeys(); err != nil {
-		zlog.Error(err.Error())
-	} else {
-		zlog.Info("所有Redis键已删除")
+	// 关闭时是否清空 Redis 由配置控制（redisConfig.flushOnShutdown）：
+	// 默认关闭——共享 Redis 实例时清库是危险行为；开发环境如需干净状态可显式开启。
+	if conf.RedisConfig.FlushOnShutdown {
+		if err := myredis.DeleteAllRedisKeys(); err != nil {
+			zlog.Error(err.Error())
+		} else {
+			zlog.Info("所有Redis键已删除")
+		}
 	}
 
 	zlog.Info("服务器已关闭")

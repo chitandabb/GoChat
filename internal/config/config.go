@@ -22,6 +22,8 @@ type ServerConfig struct {
 	SSLRedirect bool   `toml:"sslRedirect"`
 	TLSCertFile string `toml:"tlsCertFile"`
 	TLSKeyFile  string `toml:"tlsKeyFile"`
+	// WSAllowedOrigins 是 WebSocket 握手允许的 Origin 白名单（逗号分隔）。
+	WSAllowedOrigins []string `toml:"wsAllowedOrigins"`
 }
 
 type MysqlConfig struct {
@@ -40,6 +42,9 @@ type RedisConfig struct {
 	Port     int    `toml:"port"`
 	Password string `toml:"password"`
 	Db       int    `toml:"db"`
+	// FlushOnShutdown 控制在优雅关闭时是否清空 Redis 全部 key。
+	// 生产环境必须保持 false：共享 Redis 实例时清库是危险行为。
+	FlushOnShutdown bool `toml:"flushOnShutdown"`
 }
 
 type AuthCodeConfig struct {
@@ -71,6 +76,17 @@ type KafkaConfig struct {
 	ChatTopic   string        `toml:"chatTopic"`
 	Partition   int           `toml:"partition"`
 	Timeout     time.Duration `toml:"timeout"`
+	// RequiredAcks 控制生产端确认级别：none / one / all。
+	// none 吞吐最高但可能丢消息；one 是可靠性与吞吐的默认折中；all 最强一致。
+	RequiredAcks string `toml:"requiredAcks"`
+}
+
+// JwtConfig 控制双 Token 认证的密钥与有效期。
+// Access Token 为短效 JWT(无状态),Refresh Token 为不透明随机串(Redis 白名单)。
+type JwtConfig struct {
+	Secret          string `toml:"secret"`
+	AccessTokenTTL  int    `toml:"accessTokenTTL"`  // 分钟
+	RefreshTokenTTL int    `toml:"refreshTokenTTL"` // 天
 }
 
 type StaticSrcConfig struct {
@@ -87,6 +103,7 @@ type Config struct {
 	AuthCodeConfig  AuthCodeConfig  `toml:"authCodeConfig"`
 	LogConfig       LogConfig       `toml:"logConfig"`
 	KafkaConfig     KafkaConfig     `toml:"kafkaConfig"`
+	JwtConfig       JwtConfig       `toml:"jwtConfig"`
 	StaticSrcConfig StaticSrcConfig `toml:"staticSrcConfig"`
 }
 
@@ -239,12 +256,12 @@ func candidateConfigBaseDirs() []string {
 	dirs := make([]string, 0, 8)
 
 	if workingDir, err := os.Getwd(); err == nil {
-		dirs = append(dirs, workingDir, filepath.Join(workingDir, ".."), filepath.Join(workingDir, "..", ".."))
+		dirs = append(dirs, workingDir, filepath.Join(workingDir, ".."), filepath.Join(workingDir, "..", ".."), filepath.Join(workingDir, "..", "..", ".."))
 	}
 
 	if executablePath, err := os.Executable(); err == nil {
 		executableDir := filepath.Dir(executablePath)
-		dirs = append(dirs, executableDir, filepath.Join(executableDir, ".."), filepath.Join(executableDir, "..", ".."))
+		dirs = append(dirs, executableDir, filepath.Join(executableDir, ".."), filepath.Join(executableDir, "..", ".."), filepath.Join(executableDir, "..", "..", ".."))
 	}
 
 	seen := make(map[string]struct{}, len(dirs))
@@ -298,6 +315,7 @@ func applyEnvOverrides(cfg *Config, lookupEnv func(string) (string, bool)) error
 		{envName: "GOCHAT_TLS_KEY_FILE", target: &cfg.ServerConfig.TLSKeyFile},
 		{envName: "GOCHAT_SMS_ACCESS_KEY_ID", target: &cfg.AuthCodeConfig.AccessKeyID},
 		{envName: "GOCHAT_SMS_ACCESS_KEY_SECRET", target: &cfg.AuthCodeConfig.AccessKeySecret},
+		{envName: "GOCHAT_JWT_SECRET", target: &cfg.JwtConfig.Secret},
 	}
 
 	for _, item := range stringTargets {
@@ -383,6 +401,9 @@ func (cfg *Config) normalize() {
 	if cfg.ServerConfig.Port == 0 {
 		cfg.ServerConfig.Port = 8000
 	}
+	if len(cfg.ServerConfig.WSAllowedOrigins) == 0 {
+		cfg.ServerConfig.WSAllowedOrigins = []string{"http://localhost:8080", "http://127.0.0.1:8080"}
+	}
 
 	if cfg.MysqlConfig.Host == "" {
 		cfg.MysqlConfig.Host = "127.0.0.1"
@@ -407,7 +428,7 @@ func (cfg *Config) normalize() {
 		cfg.RedisConfig.Host = "127.0.0.1"
 	}
 	if cfg.RedisConfig.Port == 0 {
-		cfg.RedisConfig.Port = 6379
+		cfg.RedisConfig.Port = 6380
 	}
 
 	if cfg.LogConfig.LogPath == "" {
@@ -431,6 +452,20 @@ func (cfg *Config) normalize() {
 	}
 	if cfg.KafkaConfig.Timeout == 0 {
 		cfg.KafkaConfig.Timeout = 1
+	}
+	if cfg.KafkaConfig.RequiredAcks == "" {
+		cfg.KafkaConfig.RequiredAcks = "one"
+	}
+
+	if cfg.JwtConfig.AccessTokenTTL == 0 {
+		cfg.JwtConfig.AccessTokenTTL = 15 // 15 分钟
+	}
+	if cfg.JwtConfig.RefreshTokenTTL == 0 {
+		cfg.JwtConfig.RefreshTokenTTL = 7 // 7 天
+	}
+	if cfg.JwtConfig.Secret == "" {
+		// 兜底密钥只用于本地开发；生产必须通过 GOCHAT_JWT_SECRET 注入。
+		cfg.JwtConfig.Secret = "gochat-dev-secret-change-me"
 	}
 
 	if cfg.StaticSrcConfig.StaticAvatarPath == "" {

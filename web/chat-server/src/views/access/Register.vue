@@ -124,6 +124,7 @@ import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { useStore } from "vuex";
 import AuthShell from "@/components/AuthShell.vue";
+import { connectSocket } from "@/utils/ws";
 
 export default {
   name: "Register",
@@ -167,33 +168,20 @@ export default {
           return;
         }
         const response = await axios.post(
-          store.state.backendUrl + "/register",
+          store.state.apiUrl + "/user/register",
           data.registerData
         );
-        if (response.data.code == 200) {
+        if (response.data.code == 0) {
           ElMessage.success(response.data.message);
           console.log(response.data.message);
-          if (!response.data.data.avatar.startsWith("http")) {
-            response.data.data.avatar =
-              store.state.backendUrl + response.data.data.avatar;
+          const registerData2 = response.data.data;
+          store.commit("setAccessToken", registerData2.access_token);
+          const userInfo = registerData2.user_info;
+          if (!userInfo.avatar.startsWith("http")) {
+            userInfo.avatar = store.state.backendUrl + userInfo.avatar;
           }
-          store.commit("setUserInfo", response.data.data);
-          const wsUrl =
-            store.state.wsUrl + "/wss?client_id=" + response.data.data.uuid;
-          console.log(wsUrl);
-          store.state.socket = new WebSocket(wsUrl);
-          store.state.socket.onopen = () => {
-            console.log("WebSocket连接已打开");
-          };
-          store.state.socket.onmessage = (message) => {
-            console.log("收到消息：", message.data);
-          };
-          store.state.socket.onclose = () => {
-            console.log("WebSocket连接已关闭");
-          };
-          store.state.socket.onerror = () => {
-            console.log("WebSocket连接发生错误");
-          };
+          store.commit("setUserInfo", userInfo);
+          connectSocket(store);
           router.push("/chat/sessionlist");
         } else {
           ElMessage.error(response.data.message);
@@ -257,14 +245,14 @@ export default {
         telephone: data.registerData.telephone,
       };
       const rsp = await axios.post(
-        store.state.backendUrl + "/user/sendSmsCode",
+        store.state.apiUrl + "/auth/sendSmsCode",
         req
       );
       console.log(rsp);
-      if (rsp.data.code == 200) {
+      if (rsp.data.code == 0) {
         ElMessage.success(rsp.data.message);
         startCountdown();
-      } else if (rsp.data.code == 400) {
+      } else if (rsp.data.code == 40000) {
         ElMessage.warning(rsp.data.message);
       } else {
         ElMessage.error(rsp.data.message);

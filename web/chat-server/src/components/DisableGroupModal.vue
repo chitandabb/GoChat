@@ -78,7 +78,7 @@ export default {
     const getGroupInfoList = async () => {
       try {
         const rsp = await axios.post(
-          store.state.backendUrl + "/group/getGroupInfoList"
+          store.state.apiUrl + "/admin/getGroupInfoList"
         );
         data.disableGroupTableData = rsp.data.data;
         console.log(rsp);
@@ -98,7 +98,7 @@ export default {
           uuid_list: data.uuidList,
           status: status,
         };
-        const rsp = await axios.post(store.state.backendUrl + "/group/setGroupsStatus", req);
+        const rsp = await axios.post(store.state.apiUrl + "/admin/setGroupsStatus", req);
         console.log(rsp);
         getGroupInfoList();
       } catch (error) {

@@ -80,6 +80,7 @@ import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { useStore } from "vuex";
 import AuthShell from "@/components/AuthShell.vue";
+import { connectSocket } from "@/utils/ws";
 
 export default {
   name: "smsLogin",
@@ -109,38 +110,25 @@ export default {
           return;
         }
         const response = await axios.post(
-          store.state.backendUrl + "/user/smsLogin",
+          store.state.apiUrl + "/auth/smsLogin",
           data.loginData
         );
         console.log(response);
-        if (response.data.code == 200) {
-          if (response.data.data.status == 1) {
+        if (response.data.code == 0) {
+          const loginData2 = response.data.data;
+          if (loginData2.user_info.status == 1) {
             ElMessage.error("该账号已被封禁，请联系管理员。");
             return;
           }
           try {
             ElMessage.success(response.data.message);
-            if (!response.data.data.avatar.startsWith("http")) {
-              response.data.data.avatar =
-                store.state.backendUrl + response.data.data.avatar;
+            store.commit("setAccessToken", loginData2.access_token);
+            const userInfo = loginData2.user_info;
+            if (!userInfo.avatar.startsWith("http")) {
+              userInfo.avatar = store.state.backendUrl + userInfo.avatar;
             }
-            store.commit("setUserInfo", response.data.data);
-            const wsUrl =
-              store.state.wsUrl + "/wss?client_id=" + response.data.data.uuid;
-            console.log(wsUrl);
-            store.state.socket = new WebSocket(wsUrl);
-            store.state.socket.onopen = () => {
-              console.log("WebSocket连接已打开");
-            };
-            store.state.socket.onmessage = (message) => {
-              console.log("收到消息：", message.data);
-            };
-            store.state.socket.onclose = () => {
-              console.log("WebSocket连接已关闭");
-            };
-            store.state.socket.onerror = () => {
-              console.log("WebSocket连接发生错误");
-            };
+            store.commit("setUserInfo", userInfo);
+            connectSocket(store);
             router.push("/chat/sessionlist");
           } catch (error) {
             console.log(error);
@@ -202,14 +190,14 @@ export default {
           telephone: data.loginData.telephone,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/user/sendSmsCode",
+          store.state.apiUrl + "/auth/sendSmsCode",
           req
         );
         console.log(rsp);
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           startCountdown();
-        } else if (rsp.data.code == 400) {
+        } else if (rsp.data.code == 40000) {
           ElMessage.warning(rsp.data.message);
         } else {
           ElMessage.error(rsp.data.message);

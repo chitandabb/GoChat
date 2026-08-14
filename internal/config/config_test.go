@@ -27,7 +27,7 @@ network = "tcp"
 
 [redisConfig]
 host = "base-redis"
-port = 6379
+port = 6380
 password = "base-redis-pass"
 db = 0
 

@@ -131,7 +131,7 @@ export default {
     const fetchUserSessionList = async () => {
       data.ownListReq.owner_id = store.state.userInfo.uuid;
       const rsp = await axios.post(
-        store.state.backendUrl + "/session/getUserSessionList",
+        store.state.apiUrl + "/session/getUserSessionList",
         data.ownListReq
       );
       data.userSessionList = normalizeAvatarList(rsp.data.data || []);
@@ -140,7 +140,7 @@ export default {
     const fetchGroupSessionList = async () => {
       data.ownListReq.owner_id = store.state.userInfo.uuid;
       const rsp = await axios.post(
-        store.state.backendUrl + "/session/getGroupSessionList",
+        store.state.apiUrl + "/session/getGroupSessionList",
         data.ownListReq
       );
       data.groupSessionList = normalizeAvatarList(rsp.data.data || []);

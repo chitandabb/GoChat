@@ -127,10 +127,10 @@ export default {
         owner_id: data.userInfo.uuid,
       };
       const rsp = await axios.post(
-        store.state.backendUrl + "/user/wsLogout",
+        store.state.apiUrl + "/user/wsLogout",
         req
       );
-      if (rsp.data.code == 200) {
+      if (rsp.data.code == 0) {
         router.push("/login");
         ElMessage.success(rsp.data.message);
       } else {

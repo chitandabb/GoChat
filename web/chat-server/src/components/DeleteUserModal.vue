@@ -73,7 +73,7 @@ export default {
           owner_id: store.state.userInfo.uuid,
         }
         const rsp = await axios.post(
-          store.state.backendUrl + "/user/getUserInfoList", req
+          store.state.apiUrl + "/admin/getUserInfoList", req
         );
         data.deleteUserTableData = rsp.data.data;
         console.log(rsp);
@@ -92,7 +92,7 @@ export default {
         const req = {
           uuid_list: data.uuidList,
         };
-        const rsp = await axios.post(store.state.backendUrl + "/user/deleteUsers", req);
+        const rsp = await axios.post(store.state.apiUrl + "/admin/deleteUsers", req);
         console.log(rsp);
         getUserList();
       } catch (error) {

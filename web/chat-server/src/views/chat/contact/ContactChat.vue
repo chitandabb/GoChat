@@ -906,10 +906,10 @@ export default {
       scrollbarRef: null,
       addGroupList: [],
       uploadRef: null,
-      uploadPath: store.state.backendUrl + "/message/uploadFile",
+      uploadPath: store.state.apiUrl + "/message/uploadFile",
       fileList: [],
       uploadAvatarRef: null,
-      uploadAvatarPath: store.state.backendUrl + "/message/uploadAvatar",
+      uploadAvatarPath: store.state.apiUrl + "/message/uploadAvatar",
       avatarList: [],
       backendUrl: store.state.backendUrl,
       updateGroupInfo: {
@@ -1144,7 +1144,7 @@ export default {
       try {
         data.getContactInfoReq.contact_id = id;
         const rsp = await axios.post(
-          store.state.backendUrl + "/contact/getContactInfo",
+          store.state.apiUrl + "/contact/getContactInfo",
           data.getContactInfoReq
         );
         if (!rsp.data.data.contact_avatar.startsWith("http")) {
@@ -1164,7 +1164,7 @@ export default {
           receive_id: contactId,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/session/openSession",
+          store.state.apiUrl + "/session/openSession",
           req
         );
         data.sessionId = rsp.data.data;
@@ -1178,7 +1178,7 @@ export default {
       try {
         data.createGroupReq.owner_id = data.userInfo.uuid;
         const response = await axios.post(
-          store.state.backendUrl + "/group/createGroup",
+          store.state.apiUrl + "/group/createGroup",
           data.createGroupReq
         );
       } catch (error) {
@@ -1215,10 +1215,10 @@ export default {
           group_id: data.contactInfo.contact_id,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/contact/getAddGroupList",
+          store.state.apiUrl + "/contact/getAddGroupList",
           req
         );
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           data.addGroupList = rsp.data.data;
           console.log(rsp.data.data);
           if (data.addGroupList == null) {
@@ -1270,7 +1270,7 @@ export default {
           session_id: data.sessionId,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/session/deleteSession",
+          store.state.apiUrl + "/session/deleteSession",
           req
         );
         console.log(rsp.data);
@@ -1310,7 +1310,7 @@ export default {
           contact_id: data.contactInfo.contact_id,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/contact/deleteContact",
+          store.state.apiUrl + "/contact/deleteContact",
           req
         );
         console.log(rsp.data);
@@ -1350,7 +1350,7 @@ export default {
           contact_id: data.contactInfo.contact_id,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/contact/blackContact",
+          store.state.apiUrl + "/contact/blackContact",
           req
         );
         console.log(rsp.data);
@@ -1429,7 +1429,7 @@ export default {
         };
         console.log(req);
         const rsp = await axios.post(
-          store.state.backendUrl + "/message/getMessageList",
+          store.state.apiUrl + "/message/getMessageList",
           req
         );
         if (rsp.data.data) {
@@ -1456,7 +1456,7 @@ export default {
         };
         console.log(req);
         const rsp = await axios.post(
-          store.state.backendUrl + "/message/getGroupMessageList",
+          store.state.apiUrl + "/message/getGroupMessageList",
           req
         );
         if (rsp.data.data) {
@@ -1492,11 +1492,11 @@ export default {
           contact_id: contactId,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/contact/passContactApply",
+          store.state.apiUrl + "/contact/passContactApply",
           req
         );
         console.log(rsp);
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           data.addGroupList = data.addGroupList.filter(
             (c) => c.contact_id !== contactId
@@ -1516,11 +1516,11 @@ export default {
           contact_id: contactId,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/contact/refuseContactApply",
+          store.state.apiUrl + "/contact/refuseContactApply",
           req
         );
         console.log(rsp);
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           data.addGroupList = data.addGroupList.filter(
             (c) => c.contact_id !== contactId
@@ -1540,14 +1540,14 @@ export default {
           group_id: data.contactInfo.contact_id,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/group/leaveGroup",
+          store.state.apiUrl + "/group/leaveGroup",
           req
         );
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           console.log(rsp.data.message);
           router.push("/chat/sessionlist");
-        } else if (rsp.data.code == 400) {
+        } else if (rsp.data.code == 40000) {
           ElMessage.warning(rsp.data.message);
           console.log(rsp.data.message);
         } else {
@@ -1566,14 +1566,14 @@ export default {
           group_id: data.contactInfo.contact_id,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/group/dismissGroup",
+          store.state.apiUrl + "/group/dismissGroup",
           req
         );
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           console.log(rsp.data.message);
           router.push("/chat/sessionlist");
-        } else if (rsp.data.code == 400) {
+        } else if (rsp.data.code == 40000) {
           ElMessage.warning(rsp.data.message);
           console.log(rsp.data.message);
         } else {
@@ -1679,10 +1679,10 @@ export default {
         }
         data.updateGroupInfo.uuid = data.contactInfo.contact_id;
         const rsp = await axios.post(
-          store.state.backendUrl + "/group/updateGroupInfo",
+          store.state.apiUrl + "/group/updateGroupInfo",
           data.updateGroupInfo
         );
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           data.isUpdateGroupInfoModalVisible = false;
           await getChatContactInfo(router.currentRoute.value.params.id);
@@ -1704,11 +1704,11 @@ export default {
       };
       try {
         const rsp = await axios.post(
-          store.state.backendUrl + "/group/getGroupMemberList",
+          store.state.apiUrl + "/group/getGroupMemberList",
           req
         );
         console.log(rsp);
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           for (let i = 0; i < rsp.data.data.length; i++) {
             if (!rsp.data.data[i].avatar.startsWith("http")) {
               rsp.data.data[i].avatar =
@@ -1750,14 +1750,14 @@ export default {
       console.log(data.contactInfo);
       try {
         const rsp = await axios.post(
-          store.state.backendUrl + "/group/removeGroupMembers",
+          store.state.apiUrl + "/group/removeGroupMembers",
           req
         );
         console.log(rsp);
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           getGroupMemberList();
-        } else if (rsp.data.code == 400) {
+        } else if (rsp.data.code == 40000) {
           ElMessage.warning(rsp.data.message);
         } else {
           ElMessage.error(rsp.data.message);

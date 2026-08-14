@@ -1,33 +1,33 @@
 package v1
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"gochat/pkg/apperr"
+	"gochat/pkg/zlog"
 )
 
-func JsonBack(c *gin.Context, message string, ret int, data interface{}) {
-	if ret == 0 {
-		if data != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    200,
-				"message": message,
-				"data":    data,
-			})
-		} else {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    200,
-				"message": message,
-			})
-		}
-	} else if ret == -2 {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    400,
-			"message": message,
-		})
-	} else if ret == -1 {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    500,
-			"message": message,
-		})
+// OK 统一成功响应。
+// 契约见 docs/design/api.md: { "code": 0, "message": "ok", "data": ... }
+func OK(c *gin.Context, data interface{}) {
+	c.JSON(http.StatusOK, gin.H{
+		"code":    apperr.CodeOK,
+		"message": "ok",
+		"data":    data,
+	})
+}
+
+// BindJSON 绑定并校验请求体。
+// 失败时统一记录为 40001 参数错误并中断请求，由全局错误中间件序列化响应。
+// 返回 false 表示绑定失败，handler 应立即 return。
+func BindJSON(c *gin.Context, obj interface{}) bool {
+	if err := c.ShouldBindJSON(obj); err != nil {
+		zlog.Error(err.Error())
+		c.Abort()
+		c.Error(apperr.BadRequest("参数错误"))
+		return false
 	}
+	return true
 }

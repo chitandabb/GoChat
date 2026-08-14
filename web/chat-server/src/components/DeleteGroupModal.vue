@@ -71,7 +71,7 @@ export default {
     const getGroupInfoList = async () => {
       try {
         const rsp = await axios.post(
-          store.state.backendUrl + "/group/getGroupInfoList"
+          store.state.apiUrl + "/admin/getGroupInfoList"
         );
         data.deleteGroupTableData = rsp.data.data;
         console.log(rsp);
@@ -90,7 +90,7 @@ export default {
         const req = {
           uuid_list: data.uuidList,
         };
-        const rsp = await axios.post(store.state.backendUrl + "/group/deleteGroups", req);
+        const rsp = await axios.post(store.state.apiUrl + "/admin/deleteGroups", req);
         console.log(rsp);
         getGroupInfoList();
       } catch (error) {

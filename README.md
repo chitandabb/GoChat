@@ -122,6 +122,14 @@ WebSocket 为前端和客户端之间建立了实时、双向的通信连接。
 
 ![image](https://file1.kamacoder.com/i/web/2025-08-18_12-44-34.jpg)
 
+## 工程现状(2026-08)
+
+- **鉴权**:JWT 双 Token(Access 15min + Refresh 7d Redis 白名单,续期旋转 + 重放检测)、bcrypt、HTTP/WS 统一鉴权,详见 [`docs/design/api.md`](docs/design/api.md)。
+- **消息管道**:先落库后推送、下行非阻塞推送 + 慢客户端治理、心跳、消息幂等、状态批量落库;channel / Kafka 双模式共享同一套分发语义,详见 [`docs/design/messaging.md`](docs/design/messaging.md)。
+- **压测**:自研客户端 `go run ./bench`(conn / chat / group / slow / api 五场景),实测 3000 并发连接、消息 P99=19.5ms、缓存命中率 99.75%、接口 P95 4.8→2.2ms,完整报告见 [`docs/notes/压测报告.md`](docs/notes/压测报告.md)。
+- **Kafka 模式**:`docker compose up -d kafka` 后以 `CONFIG_FILE=configs/config.kafka.toml` 启动(见 [`configs/config.kafka.toml`](configs/config.kafka.toml))。
+- 全量文档索引见 [`docs/README.md`](docs/README.md)。
+
 ## 本地开发与环境切换
 
 当前仓库已经支持按 `base + env + 显式文件 + 环境变量覆盖` 的顺序加载配置：
@@ -161,7 +169,7 @@ docker compose up -d --build
 - `gochat-frontend`：前端页面，访问 `http://localhost:8080`
 - `gochat-backend`：后端接口，访问 `http://localhost:8000`
 - `gochat-mysql`：MySQL 8，映射到 `localhost:3306`
-- `gochat-redis`：Redis 7，映射到 `localhost:6379`
+- `gochat-redis`：Redis 7，映射到 `localhost:6380`（避开其他项目占用的 6379）
 - `gochat-seed`：一次性初始化测试用户，执行完成后自动退出
 
 默认测试账号：

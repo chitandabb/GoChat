@@ -165,7 +165,7 @@ export default {
       },
       isMyInfoModalVisible: false,
       uploadRef: null,
-      uploadPath: store.state.backendUrl + "/message/uploadAvatar",
+      uploadPath: store.state.apiUrl + "/message/uploadAvatar",
       fileList: [],
       cnt: 0,
     });
@@ -227,10 +227,10 @@ export default {
 
       try {
         const rsp = await axios.post(
-          store.state.backendUrl + "/user/updateUserInfo",
+          store.state.apiUrl + "/user/updateUserInfo",
           data.updateInfo
         );
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
         } else {
           ElMessage.error(rsp.data.message);

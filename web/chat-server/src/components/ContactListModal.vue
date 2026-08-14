@@ -448,7 +448,7 @@ export default {
       },
       newContactList: [],
       uploadRef: null,
-      uploadPath: store.state.backendUrl + "/message/uploadAvatar",
+      uploadPath: store.state.apiUrl + "/message/uploadAvatar",
       fileList: [],
       loadedUserList: false,
       loadedMyGroupList: false,
@@ -527,10 +527,10 @@ export default {
           data.uploadRef.submit();
         }
         const response = await axios.post(
-          store.state.backendUrl + "/group/createGroup",
+          store.state.apiUrl + "/group/createGroup",
           data.createGroupReq
         );
-        if (response.data.code == 200) {
+        if (response.data.code == 0) {
           data.loadedMyGroupList = false;
           await handleShowMyGroupList();
         }
@@ -588,10 +588,10 @@ export default {
           group_id: data.applyContactReq.contact_id,
         };
         let rsp = await axios.post(
-          store.state.backendUrl + "/group/checkGroupAddMode",
+          store.state.apiUrl + "/group/checkGroupAddMode",
           req
         );
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           if (rsp.data.data == 0) {
             // 直接加入
             handleEnterDirectly(data.applyContactReq.contact_id);
@@ -603,11 +603,11 @@ export default {
         }
         data.applyContactReq.owner_id = data.userInfo.uuid;
         rsp = await axios.post(
-          store.state.backendUrl + "/contact/applyContact",
+          store.state.apiUrl + "/contact/applyContact",
           data.applyContactReq
         );
         console.log(rsp);
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           if (rsp.data.message == "申请成功") {
             data.isApplyContactModalVisible = false;
             ElMessage.success("申请成功");
@@ -626,11 +626,11 @@ export default {
       try {
         data.applyContactReq.owner_id = data.userInfo.uuid;
         const rsp = await axios.post(
-          store.state.backendUrl + "/contact/applyContact",
+          store.state.apiUrl + "/contact/applyContact",
           data.applyContactReq
         );
         console.log(rsp);
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           if (rsp.data.message == "申请成功") {
             data.isApplyContactModalVisible = false;
             ElMessage.success("申请成功");
@@ -650,7 +650,7 @@ export default {
       try {
         data.ownListReq.owner_id = data.userInfo.uuid;
         const getUserListRsp = await axios.post(
-          store.state.backendUrl + "/contact/getUserList",
+          store.state.apiUrl + "/contact/getUserList",
           data.ownListReq
         );
         data.contactUserList = normalizeAvatarList(getUserListRsp.data.data || []);
@@ -671,7 +671,7 @@ export default {
       try {
         data.ownListReq.owner_id = data.userInfo.uuid;
         const loadMyGroupRsp = await axios.post(
-          store.state.backendUrl + "/group/loadMyGroup",
+          store.state.apiUrl + "/group/loadMyGroup",
           data.ownListReq
         );
         data.myGroupList = normalizeAvatarList(loadMyGroupRsp.data.data || []);
@@ -691,7 +691,7 @@ export default {
       try {
         data.ownListReq.owner_id = data.userInfo.uuid;
         const loadMyJoinedGroupRsp = await axios.post(
-          store.state.backendUrl + "/contact/loadMyJoinedGroup",
+          store.state.apiUrl + "/contact/loadMyJoinedGroup",
           data.ownListReq
         );
         data.myJoinedGroupList = normalizeAvatarList(
@@ -713,10 +713,10 @@ export default {
           receive_id: user.user_id,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/session/checkOpenSessionAllowed",
+          store.state.apiUrl + "/session/checkOpenSessionAllowed",
           req
         );
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           if (rsp.data.data == true) {
             router.push("/chat/" + user.user_id);
           } else {
@@ -740,10 +740,10 @@ export default {
           receive_id: group.group_id,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/session/checkOpenSessionAllowed",
+          store.state.apiUrl + "/session/checkOpenSessionAllowed",
           req
         );
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           if (rsp.data.data == true) {
             router.push("/chat/" + group.group_id);
           } else {
@@ -751,7 +751,7 @@ export default {
             console.error(rsp.data.message);
           }
         } else {
-          if (rsp.data.code == 400) {
+          if (rsp.data.code == 40000) {
             ElMessage.warning(rsp.data.message);
             console.error(rsp.data.message);
           } else {
@@ -768,7 +768,7 @@ export default {
       try {
         data.ownListReq.owner_id = data.userInfo.uuid;
         const rsp = await axios.post(
-          store.state.backendUrl + "/contact/getNewContactList",
+          store.state.apiUrl + "/contact/getNewContactList",
           data.ownListReq
         );
         console.log(rsp);
@@ -797,11 +797,11 @@ export default {
           contact_id: contactId,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/contact/passContactApply",
+          store.state.apiUrl + "/contact/passContactApply",
           req
         );
         console.log(rsp);
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           data.newContactList = data.newContactList.filter(
             (c) => c.contact_id !== contactId
@@ -822,11 +822,11 @@ export default {
           contact_id: data.userInfo.uuid,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/group/enterGroupDirectly",
+          store.state.apiUrl + "/group/enterGroupDirectly",
           req
         );
         console.log(rsp);
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           data.isApplyContactModalVisible = false;
           data.loadedMyJoinedGroupList = false;
@@ -845,20 +845,20 @@ export default {
           contact_id: contactId,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/contact/refuseContactApply",
+          store.state.apiUrl + "/contact/refuseContactApply",
           req
         );
         console.log(rsp);
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           console.log(rsp.data.message);
           data.newContactList = data.newContactList.filter(
             (c) => c.contact_id !== contactId
           );
-        } else if (rsp.data.code == 400) {
+        } else if (rsp.data.code == 40000) {
           ElMessage.warning(rsp.data.message);
           console.log(rsp.data.message);
-        } else if (rsp.data.code == 500) {
+        } else if (rsp.data.code == 50000) {
           ElMessage.error(rsp.data.message);
           console.log(rsp.data.message);
         }
@@ -873,19 +873,19 @@ export default {
           contact_id: contactId,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/contact/blackApply",
+          store.state.apiUrl + "/contact/blackApply",
           req
         );
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           console.log(rsp.data.message);
           data.newContactList = data.newContactList.filter(
             (c) => c.contact_id !== contactId
           );
-        } else if (rsp.data.code == 400) {
+        } else if (rsp.data.code == 40000) {
           ElMessage.warning(rsp.data.message);
           console.log(rsp.data.message);
-        } else if (rsp.data.code == 500) {
+        } else if (rsp.data.code == 50000) {
           ElMessage.error(rsp.data.message);
           console.log(rsp.data.message);
         }
@@ -901,18 +901,18 @@ export default {
           contact_id: user.user_id,
         };
         const rsp = await axios.post(
-          store.state.backendUrl + "/contact/cancelBlackContact",
+          store.state.apiUrl + "/contact/cancelBlackContact",
           req
         );
-        if (rsp.data.code == 200) {
+        if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           console.log(rsp.data.message);
           data.loadedUserList = false;
           await handleShowUserList();
-        } else if (rsp.data.code == 400) {
+        } else if (rsp.data.code == 40000) {
           ElMessage.warning(rsp.data.message);
           console.log(rsp.data.message);
-        } else if (rsp.data.code == 500) {
+        } else if (rsp.data.code == 50000) {
           ElMessage.error(rsp.data.message);
           console.log(rsp.data.message);
         }

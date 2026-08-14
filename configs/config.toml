@@ -18,9 +18,10 @@ socketPath = "/var/run/mysqld/mysqld.sock"
 
 [redisConfig]
 host = "127.0.0.1"
-port = 6379
+port = 6380
 password = ""
 db = 0
+flushOnShutdown = false
 
 [authCodeConfig]
 accessKeyID = ""
@@ -49,6 +50,12 @@ chatTopic = "chat_message"
 logoutTopic = "logout"
 partition = 0
 timeout = 1
+
+[jwtConfig]
+# 生产必须通过环境变量 GOCHAT_JWT_SECRET 注入强密钥
+secret = "gochat-dev-secret-change-me"
+accessTokenTTL = 15 # 分钟
+refreshTokenTTL = 7 # 天
 
 [staticSrcConfig]
 staticAvatarPath = "./static/avatars"

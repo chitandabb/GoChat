@@ -45,3 +45,7 @@ internal/service/kafka/start.bat
 /.env
 cmd/**/logs
 cmd/**/*_backend
+
+# 调试 / 工具产物
+tmp/
+web/chat-server/.codex-preview/

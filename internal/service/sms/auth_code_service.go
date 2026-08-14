@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"gochat/internal/config"
-	"gochat/pkg/constants"
+	"gochat/pkg/apperr"
 	"gochat/pkg/zlog"
 
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
@@ -41,16 +41,15 @@ func createClient() (result *dypnsapi20170525.Client, err error) {
 }
 
 // SendVerificationCode 发送短信验证码。验证码由阿里云生成，不再由本地 Redis 保存。
-func SendVerificationCode(telephone string) (string, int) {
+func SendVerificationCode(telephone string) error {
 	client, err := createClient()
 	if err != nil {
-		zlog.Error(err.Error())
-		return constants.SYSTEM_ERROR, -1
+		return apperr.SystemError(err)
 	}
 
 	authCfg := config.GetConfig().AuthCodeConfig
-	if message, ret := validateAuthCodeConfig(authCfg); ret != 0 {
-		return message, ret
+	if err := validateAuthCodeConfig(authCfg); err != nil {
+		return err
 	}
 
 	trimmedSchemeName := strings.TrimSpace(authCfg.SchemeName)
@@ -71,7 +70,7 @@ func SendVerificationCode(telephone string) (string, int) {
 			zap.String("telephone", maskTelephone(telephone)),
 			zap.Error(err),
 		)
-		return constants.SYSTEM_ERROR, -1
+		return apperr.SystemError(err)
 	}
 
 	request := &dypnsapi20170525.SendSmsVerifyCodeRequest{
@@ -101,10 +100,10 @@ func SendVerificationCode(telephone string) (string, int) {
 			zap.String("scheme_name", trimmedSchemeName),
 			zap.Error(err),
 		)
-		return constants.SYSTEM_ERROR, -1
+		return apperr.SystemError(err)
 	}
-	if message, ret := validateSendResponse(response); ret != 0 {
-		return message, ret
+	if err := validateSendResponse(response); err != nil {
+		return err
 	}
 
 	zlog.Info(
@@ -117,20 +116,19 @@ func SendVerificationCode(telephone string) (string, int) {
 		zap.String("biz_id", sendBizID(response)),
 	)
 
-	return "验证码发送成功，请及时在对应电话查收短信", 0
+	return nil
 }
 
 // CheckVerificationCode 校验短信验证码。校验逻辑由阿里云负责。
-func CheckVerificationCode(telephone string, verifyCode string) (string, int) {
+func CheckVerificationCode(telephone string, verifyCode string) error {
 	client, err := createClient()
 	if err != nil {
-		zlog.Error(err.Error())
-		return constants.SYSTEM_ERROR, -1
+		return apperr.SystemError(err)
 	}
 
 	authCfg := config.GetConfig().AuthCodeConfig
-	if message, ret := validateAuthCodeConfig(authCfg); ret != 0 {
-		return message, ret
+	if err := validateAuthCodeConfig(authCfg); err != nil {
+		return err
 	}
 
 	trimmedSchemeName := strings.TrimSpace(authCfg.SchemeName)
@@ -160,10 +158,10 @@ func CheckVerificationCode(telephone string, verifyCode string) (string, int) {
 			zap.String("scheme_name", trimmedSchemeName),
 			zap.Error(err),
 		)
-		return constants.SYSTEM_ERROR, -1
+		return apperr.SystemError(err)
 	}
-	if message, ret := validateCheckResponse(response); ret != 0 {
-		return message, ret
+	if err := validateCheckResponse(response); err != nil {
+		return err
 	}
 
 	zlog.Info(
@@ -175,19 +173,19 @@ func CheckVerificationCode(telephone string, verifyCode string) (string, int) {
 		zap.String("verify_result", checkVerifyResult(response)),
 	)
 
-	return "验证码校验成功", 0
+	return nil
 }
 
-func validateAuthCodeConfig(authCfg config.AuthCodeConfig) (string, int) {
+func validateAuthCodeConfig(authCfg config.AuthCodeConfig) error {
 	if strings.TrimSpace(authCfg.AccessKeyID) == "" || strings.TrimSpace(authCfg.AccessKeySecret) == "" {
 		zlog.Warn("短信认证 AccessKey 配置不完整")
-		return "短信认证配置不完整，请检查 AccessKey", -2
+		return apperr.Biz("短信认证配置不完整，请检查 AccessKey")
 	}
 	if strings.TrimSpace(authCfg.SignName) == "" || strings.TrimSpace(authCfg.TemplateCode) == "" {
 		zlog.Warn("短信认证签名或模板配置不完整")
-		return "短信认证配置不完整，请检查签名和模板", -2
+		return apperr.Biz("短信认证配置不完整，请检查签名和模板")
 	}
-	return "", 0
+	return nil
 }
 
 func buildTemplateParam() (string, error) {
@@ -207,10 +205,10 @@ func buildTemplateParam() (string, error) {
 	return string(templateParamBytes), nil
 }
 
-func validateSendResponse(response *dypnsapi20170525.SendSmsVerifyCodeResponse) (string, int) {
+func validateSendResponse(response *dypnsapi20170525.SendSmsVerifyCodeResponse) error {
 	if response == nil || response.Body == nil {
 		zlog.Error("阿里云发送验证码返回体为空")
-		return constants.SYSTEM_ERROR, -1
+		return apperr.SystemError(nil)
 	}
 	if response.Body.Success == nil || !tea.BoolValue(response.Body.Success) {
 		zlog.Warn(
@@ -219,10 +217,7 @@ func validateSendResponse(response *dypnsapi20170525.SendSmsVerifyCodeResponse) 
 			zap.String("message", teaString(response.Body.Message)),
 			zap.String("request_id", teaString(response.Body.RequestId)),
 		)
-		if response.Body.Message != nil {
-			return tea.StringValue(response.Body.Message), -2
-		}
-		return "验证码发送失败", -2
+		return apperr.Biz(bizMessage(teaString(response.Body.Message), "验证码发送失败"))
 	}
 	if response.Body.Code == nil || tea.StringValue(response.Body.Code) != "OK" {
 		zlog.Warn(
@@ -231,18 +226,15 @@ func validateSendResponse(response *dypnsapi20170525.SendSmsVerifyCodeResponse) 
 			zap.String("message", teaString(response.Body.Message)),
 			zap.String("request_id", teaString(response.Body.RequestId)),
 		)
-		if response.Body.Message != nil {
-			return tea.StringValue(response.Body.Message), -2
-		}
-		return "验证码发送失败", -2
+		return apperr.Biz(bizMessage(teaString(response.Body.Message), "验证码发送失败"))
 	}
-	return "", 0
+	return nil
 }
 
-func validateCheckResponse(response *dypnsapi20170525.CheckSmsVerifyCodeResponse) (string, int) {
+func validateCheckResponse(response *dypnsapi20170525.CheckSmsVerifyCodeResponse) error {
 	if response == nil || response.Body == nil {
 		zlog.Error("阿里云校验验证码返回体为空")
-		return constants.SYSTEM_ERROR, -1
+		return apperr.SystemError(nil)
 	}
 	if response.Body.Success == nil || !tea.BoolValue(response.Body.Success) {
 		zlog.Warn(
@@ -251,10 +243,7 @@ func validateCheckResponse(response *dypnsapi20170525.CheckSmsVerifyCodeResponse
 			zap.String("message", teaString(response.Body.Message)),
 			zap.String("verify_result", checkVerifyResult(response)),
 		)
-		if response.Body.Message != nil {
-			return tea.StringValue(response.Body.Message), -2
-		}
-		return "验证码校验失败", -2
+		return apperr.Biz(bizMessage(teaString(response.Body.Message), "验证码校验失败"))
 	}
 	if response.Body.Code == nil || tea.StringValue(response.Body.Code) != "OK" {
 		zlog.Warn(
@@ -263,10 +252,7 @@ func validateCheckResponse(response *dypnsapi20170525.CheckSmsVerifyCodeResponse
 			zap.String("message", teaString(response.Body.Message)),
 			zap.String("verify_result", checkVerifyResult(response)),
 		)
-		if response.Body.Message != nil {
-			return tea.StringValue(response.Body.Message), -2
-		}
-		return "验证码校验失败", -2
+		return apperr.Biz(bizMessage(teaString(response.Body.Message), "验证码校验失败"))
 	}
 	if response.Body.Model == nil || response.Body.Model.VerifyResult == nil || tea.StringValue(response.Body.Model.VerifyResult) != "PASS" {
 		zlog.Warn(
@@ -275,9 +261,9 @@ func validateCheckResponse(response *dypnsapi20170525.CheckSmsVerifyCodeResponse
 			zap.String("message", teaString(response.Body.Message)),
 			zap.String("verify_result", checkVerifyResult(response)),
 		)
-		return "验证码不正确，请重试", -2
+		return apperr.Biz("验证码不正确，请重试")
 	}
-	return "", 0
+	return nil
 }
 
 func maskTelephone(telephone string) string {
@@ -286,6 +272,14 @@ func maskTelephone(telephone string) string {
 		return trimmedTelephone
 	}
 	return trimmedTelephone[:3] + "****" + trimmedTelephone[len(trimmedTelephone)-4:]
+}
+
+// bizMessage 阿里云返回 message 为空时使用兜底文案。
+func bizMessage(message, fallback string) string {
+	if strings.TrimSpace(message) == "" {
+		return fallback
+	}
+	return message
 }
 
 func teaString(value *string) string {

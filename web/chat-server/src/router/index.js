@@ -70,7 +70,7 @@ const router = createRouter({
 });
 
 router.beforeEach((to, from, next) => {
-  if (!store.state.userInfo.uuid) {
+  if (!store.getters.isLoggedIn) {
     if (
       to.path === "/login" ||
       to.path === "/register" ||

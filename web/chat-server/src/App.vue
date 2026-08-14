@@ -6,73 +6,47 @@
 import { onMounted } from "vue";
 import { useStore } from "vuex";
 import axios from "axios";
+import { logout } from "./utils/auth";
+import { connectSocket } from "./utils/ws";
 export default {
   name: "App",
   setup() {
     const store = useStore();
-    const getUserInfo = async () => {
+
+    // 拉取最新用户信息（身份来自 Access Token，不传 uuid）
+    const loadUserInfo = async () => {
       try {
-        const req = {
-          uuid: store.state.userInfo.uuid,
-        };
-        const rsp = await axios.post(
-          store.state.backendUrl + "/user/getUserInfo",
-          req
-        );
-        if (rsp.data.code == 200) {
-          if (!rsp.data.data.avatar.startsWith("http")) {
+        const rsp = await axios.post(store.state.apiUrl + "/user/getUserInfo", {});
+        if (rsp.data.code == 0) {
+          if (rsp.data.data && !rsp.data.data.avatar.startsWith("http")) {
             rsp.data.data.avatar = store.state.backendUrl + rsp.data.data.avatar;
           }
           store.commit("setUserInfo", rsp.data.data);
-        } else {
-          console.error(rsp.data.message);
+          return true;
         }
-        console.log(rsp);
+        return false;
       } catch (error) {
         console.log(error);
+        return false;
       }
     };
-    const logout = async () => {
-      store.commit("cleanUserInfo");
-      const req = {
-        owner_id: data.userInfo.uuid,
-      };
-      const rsp = await axios.post(
-        store.state.backendUrl + "/user/wsLogout",
-        req
-      );
-      if (rsp.data.code == 200) {
-        router.push("/login");
-        ElMessage.success("账号被封禁，退出登录");
-      } else {
-        ElMessage.error(rsp.data.message);
+
+    onMounted(async () => {
+      // 无 Access Token（含静默续期失败）时不建立连接，路由守卫负责跳登录页
+      if (!store.state.accessToken) {
+        return;
       }
-    };
-    onMounted(() => {
-      if (store.state.userInfo.uuid) {
-        getUserInfo();
-        if (store.state.userInfo.status == 1) {
-          logout();
-        }
-        const wsUrl =
-          store.state.wsUrl + "/wss?client_id=" + store.state.userInfo.uuid;
-          console.log(wsUrl);
-        store.state.socket = new WebSocket(wsUrl);
-        store.state.socket.onopen = () => {
-          console.log("WebSocket连接已打开");console.log("连接信令服务器成功");
-        };
-        store.state.socket.onmessage = (message) => {
-          console.log("收到消息：", message.data);
-        };
-        store.state.socket.onclose = () => {
-          console.log("WebSocket连接已关闭");
-        console.log("连接信令服务器断开");
-        };
-        store.state.socket.onerror = () => {
-          console.log("WebSocket连接发生错误");console.log("连接信令服务器失败，错误信息：", error);
-        };
-        console.log(store.state.socket);
+      const ok = await loadUserInfo();
+      if (!ok) {
+        return;
       }
+      if (store.state.userInfo.status == 1) {
+        // 账号被封禁：主动登出
+        await logout({ silent: true });
+        ElMessage.error("账号被封禁，退出登录");
+        return;
+      }
+      connectSocket(store);
     });
   },
 };

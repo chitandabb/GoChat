@@ -1,3 +1,7 @@
+# kafka 模式运行配置（示例 / 压测用）
+# 用法：$env:CONFIG_FILE = "configs/config.kafka.toml"; go run ./cmd/gochat
+# 依赖：docker compose up -d kafka 或任意可达的 Kafka broker。
+
 [serverConfig]
 appName = "gochat"
 host = "0.0.0.0"
@@ -18,27 +22,44 @@ socketPath = "/var/run/mysqld/mysqld.sock"
 
 [redisConfig]
 host = "127.0.0.1"
-port = 6379
+port = 6380
 password = ""
 db = 0
+flushOnShutdown = false
 
 [authCodeConfig]
 accessKeyID = ""
 accessKeySecret = ""
-signName = "阿里云短信测试"
-templateCode = "SMS_154950909"
+signName = ""
+templateCode = ""
+schemeName = ""
+countryCode = "86"
+codeLength = 6
+validTime = 300
+duplicatePolicy = 1
+interval = 60
+codeType = 1
+caseAuthPolicy = 1
+returnVerifyCode = false
+autoRetry = 1
 
 [logConfig]
 logPath = "./logs/gochat.log"
 
 [kafkaConfig]
-messageMode = "channel"
+messageMode = "kafka"
 hostPort = "127.0.0.1:9092"
 loginTopic = "login"
 chatTopic = "chat_message"
 logoutTopic = "logout"
-partition = 0
+partition = 1
 timeout = 1
+requiredAcks = "one"
+
+[jwtConfig]
+secret = "gochat-dev-secret-change-me"
+accessTokenTTL = 15
+refreshTokenTTL = 7
 
 [staticSrcConfig]
 staticAvatarPath = "./static/avatars"

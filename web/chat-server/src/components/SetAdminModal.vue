@@ -83,7 +83,7 @@ export default {
           owner_id: store.state.userInfo.uuid,
         }
         const rsp = await axios.post(
-          store.state.backendUrl + "/user/getUserInfoList", req
+          store.state.apiUrl + "/admin/getUserInfoList", req
         );
         data.setAdminTableData = rsp.data.data;
         console.log(rsp);
@@ -104,7 +104,7 @@ export default {
           is_admin: isAdmin,
         }
         const rsp = await axios.post(
-          store.state.backendUrl + "/user/setAdmin", req);
+          store.state.apiUrl + "/admin/setAdmin", req);
         console.log(rsp);
         // router.go(0);
         getUserList();

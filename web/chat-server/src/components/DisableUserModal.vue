@@ -93,7 +93,7 @@ export default {
           owner_id: store.state.userInfo.uuid,
         }
         const rsp = await axios.post(
-          store.state.backendUrl + "/user/getUserInfoList", req
+          store.state.apiUrl + "/admin/getUserInfoList", req
         );
         data.disableUserTableData = rsp.data.data;
         console.log(rsp);
@@ -113,7 +113,7 @@ export default {
           uuid_list: data.uuidList,
         }
         const rsp = await axios.post(
-          store.state.backendUrl + "/user/ableUsers", req);
+          store.state.apiUrl + "/admin/ableUsers", req);
         console.log(rsp);
         // router.go(0);
         getUserList();
@@ -128,7 +128,7 @@ export default {
           uuid_list: data.uuidList,
         }
         const rsp = await axios.post(
-          store.state.backendUrl + "/user/disableUsers", req);
+          store.state.apiUrl + "/admin/disableUsers", req);
         console.log(rsp);
         // router.go(0);
         getUserList();

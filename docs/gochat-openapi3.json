@@ -1,0 +1,3176 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "GoChat API",
+    "version": "1.0.0",
+    "description": "根据项目当前 Gin 路由、controller、DTO 和 service 结构整理的 OpenAPI 3 文档。所有 REST 接口虽然基本都返回 HTTP 200，但真实业务结果请以响应体中的 code 字段为准：200=成功，400=业务错误，500=系统错误。WebSocket 接口为 GET /wss?client_id={userId}。"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "README 中默认本地开发后端地址"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "登录、注册、短信验证码"
+    },
+    {
+      "name": "User",
+      "description": "用户资料与管理员用户管理"
+    },
+    {
+      "name": "Group",
+      "description": "群聊创建、管理、成员操作"
+    },
+    {
+      "name": "Session",
+      "description": "会话创建与会话列表"
+    },
+    {
+      "name": "Contact",
+      "description": "联系人、好友申请、群申请"
+    },
+    {
+      "name": "Message",
+      "description": "历史消息、文件与头像上传"
+    },
+    {
+      "name": "Chatroom",
+      "description": "聊天室辅助接口"
+    },
+    {
+      "name": "WebSocket",
+      "description": "实时通信"
+    },
+    {
+      "name": "Static",
+      "description": "静态资源访问"
+    }
+  ],
+  "paths": {
+    "/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "账号密码登录",
+        "operationId": "login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "业务结果看 code 字段",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "注册",
+        "operationId": "register",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "业务结果看 code 字段",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/smsLogin": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "短信验证码登录",
+        "operationId": "smsLogin",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmsLoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "业务结果看 code 字段",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/sendSmsCode": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "发送短信验证码",
+        "operationId": "sendSmsCode",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendSmsCodeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "发送结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/updateUserInfo": {
+      "post": {
+        "tags": [
+          "User"
+        ],
+        "summary": "修改用户信息",
+        "operationId": "updateUserInfo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserInfoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "修改结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/getUserInfoList": {
+      "post": {
+        "tags": [
+          "User"
+        ],
+        "summary": "获取用户列表（管理员）",
+        "operationId": "getUserInfoList",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "用户列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/ableUsers": {
+      "post": {
+        "tags": [
+          "User"
+        ],
+        "summary": "启用用户",
+        "operationId": "ableUsers",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbleUsersRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "启用结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/disableUsers": {
+      "post": {
+        "tags": [
+          "User"
+        ],
+        "summary": "禁用用户",
+        "operationId": "disableUsers",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbleUsersRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "禁用结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/getUserInfo": {
+      "post": {
+        "tags": [
+          "User"
+        ],
+        "summary": "获取用户详情",
+        "operationId": "getUserInfo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetUserInfoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "用户详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserInfoResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/deleteUsers": {
+      "post": {
+        "tags": [
+          "User"
+        ],
+        "summary": "删除用户",
+        "operationId": "deleteUsers",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbleUsersRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "删除结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/setAdmin": {
+      "post": {
+        "tags": [
+          "User"
+        ],
+        "summary": "设置管理员",
+        "operationId": "setAdmin",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbleUsersRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "设置结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/wsLogout": {
+      "post": {
+        "tags": [
+          "WebSocket"
+        ],
+        "summary": "WebSocket 登出",
+        "operationId": "wsLogout",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WsLogoutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "登出结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/group/createGroup": {
+      "post": {
+        "tags": [
+          "Group"
+        ],
+        "summary": "创建群聊",
+        "operationId": "createGroup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGroupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "创建结果，接口本身不返回 group_id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/group/loadMyGroup": {
+      "post": {
+        "tags": [
+          "Group"
+        ],
+        "summary": "获取我创建的群聊",
+        "operationId": "loadMyGroup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "群聊列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupSimpleListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/group/checkGroupAddMode": {
+      "post": {
+        "tags": [
+          "Group"
+        ],
+        "summary": "检查群聊加群方式",
+        "operationId": "checkGroupAddMode",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckGroupAddModeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "返回 0=直接加入，1=群主审核",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/group/enterGroupDirectly": {
+      "post": {
+        "tags": [
+          "Group"
+        ],
+        "summary": "直接进群",
+        "operationId": "enterGroupDirectly",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnterGroupDirectlyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "进群结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/group/leaveGroup": {
+      "post": {
+        "tags": [
+          "Group"
+        ],
+        "summary": "退群",
+        "operationId": "leaveGroup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveGroupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "退群结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/group/dismissGroup": {
+      "post": {
+        "tags": [
+          "Group"
+        ],
+        "summary": "解散群聊",
+        "operationId": "dismissGroup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissGroupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "解散结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/group/getGroupInfo": {
+      "post": {
+        "tags": [
+          "Group"
+        ],
+        "summary": "获取群聊详情",
+        "operationId": "getGroupInfo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetGroupInfoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "群聊详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupInfoResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/group/getGroupInfoList": {
+      "post": {
+        "tags": [
+          "Group"
+        ],
+        "summary": "获取群聊列表（管理员）",
+        "operationId": "getGroupInfoList",
+        "responses": {
+          "200": {
+            "description": "群聊管理列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminGroupListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/group/deleteGroups": {
+      "post": {
+        "tags": [
+          "Group"
+        ],
+        "summary": "删除群聊（管理员）",
+        "operationId": "deleteGroups",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteGroupsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "删除结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/group/setGroupsStatus": {
+      "post": {
+        "tags": [
+          "Group"
+        ],
+        "summary": "设置群聊状态",
+        "operationId": "setGroupsStatus",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetGroupsStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "设置结果，status: 0=正常，1=禁用，2=解散",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/group/updateGroupInfo": {
+      "post": {
+        "tags": [
+          "Group"
+        ],
+        "summary": "更新群聊信息",
+        "operationId": "updateGroupInfo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGroupInfoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/group/getGroupMemberList": {
+      "post": {
+        "tags": [
+          "Group"
+        ],
+        "summary": "获取群成员列表",
+        "operationId": "getGroupMemberList",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetGroupMemberListRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "群成员列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupMemberListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/group/removeGroupMembers": {
+      "post": {
+        "tags": [
+          "Group"
+        ],
+        "summary": "移除群成员",
+        "operationId": "removeGroupMembers",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveGroupMembersRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "移除结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/openSession": {
+      "post": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "打开会话",
+        "operationId": "openSession",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionOpenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "返回 session_id；如果不存在会自动创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StringDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/getUserSessionList": {
+      "post": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "获取用户会话列表",
+        "operationId": "getUserSessionList",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "用户会话列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSessionListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/getGroupSessionList": {
+      "post": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "获取群聊会话列表",
+        "operationId": "getGroupSessionList",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "群聊会话列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupSessionListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/deleteSession": {
+      "post": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "删除会话",
+        "operationId": "deleteSession",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "删除结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/checkOpenSessionAllowed": {
+      "post": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "检查是否允许发起会话",
+        "operationId": "checkOpenSessionAllowed",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionOpenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "返回布尔值，true 表示可以发起会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BooleanDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact/getUserList": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "获取联系人列表（仅用户）",
+        "operationId": "getUserList",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "联系人用户列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactUserListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact/loadMyJoinedGroup": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "获取我加入的群聊",
+        "operationId": "loadMyJoinedGroup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "我加入的群聊列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupSimpleListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact/getContactInfo": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "获取联系人信息",
+        "operationId": "getContactInfo",
+        "description": "contact_id 以 U 开头时返回用户信息，以 G 开头时返回群信息。部分字段会因为类型不同而为空。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetContactInfoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "联系人详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactInfoResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact/deleteContact": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "删除联系人",
+        "operationId": "deleteContact",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteContactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "删除结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact/applyContact": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "申请添加联系人或群聊",
+        "operationId": "applyContact",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyContactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "申请结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact/getNewContactList": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "获取新的好友申请列表",
+        "operationId": "getNewContactList",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "新的好友申请列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewContactListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact/passContactApply": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "通过联系人申请",
+        "operationId": "passContactApply",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PassContactApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "处理结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact/refuseContactApply": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "拒绝联系人申请",
+        "operationId": "refuseContactApply",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PassContactApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "处理结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact/blackContact": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "拉黑联系人",
+        "operationId": "blackContact",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlackContactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "拉黑结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact/cancelBlackContact": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "取消拉黑联系人",
+        "operationId": "cancelBlackContact",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlackContactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "取消拉黑结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact/getAddGroupList": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "获取群聊申请列表",
+        "operationId": "getAddGroupList",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddGroupListRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "加群申请列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddGroupListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact/blackApply": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "拉黑申请人",
+        "operationId": "blackApply",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlackApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "处理结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/message/getMessageList": {
+      "post": {
+        "tags": [
+          "Message"
+        ],
+        "summary": "获取单聊历史消息",
+        "operationId": "getMessageList",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetMessageListRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "历史消息列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/message/getGroupMessageList": {
+      "post": {
+        "tags": [
+          "Message"
+        ],
+        "summary": "获取群聊历史消息",
+        "operationId": "getGroupMessageList",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetGroupMessageListRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "群历史消息列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupMessageListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/message/uploadAvatar": {
+      "post": {
+        "tags": [
+          "Message"
+        ],
+        "summary": "上传头像图片",
+        "operationId": "uploadAvatar",
+        "description": "后端会遍历 multipart/form-data 中任意文件字段保存到 /static/avatars。建议字段名使用 file。接口只返回成功/失败，不直接返回可访问 URL；成功后可按 /static/avatars/{原文件名} 访问。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AvatarUploadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "上传结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/message/uploadFile": {
+      "post": {
+        "tags": [
+          "Message"
+        ],
+        "summary": "上传聊天文件",
+        "operationId": "uploadFile",
+        "description": "后端会遍历 multipart/form-data 中任意文件字段保存到 /static/files。建议字段名使用 file。接口只返回成功/失败，不直接返回可访问 URL；成功后可按 /static/files/{原文件名} 访问。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/FileUploadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "上传结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chatroom/getCurContactListInChatRoom": {
+      "post": {
+        "tags": [
+          "Chatroom"
+        ],
+        "summary": "获取当前聊天室联系人列表",
+        "operationId": "getCurContactListInChatRoom",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetCurContactListInChatRoomRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "当前聊天对象相关联系人 id 列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatroomContactListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/wss": {
+      "get": {
+        "tags": [
+          "WebSocket"
+        ],
+        "summary": "建立 WebSocket 连接",
+        "operationId": "wsLogin",
+        "description": "建立连接时必须带 client_id 查询参数，例如 ws://localhost:8000/wss?client_id=U202607010001。连接建立后前端向服务端发送 ChatMessageRequest JSON。服务端会先推送一条纯文本欢迎消息，随后按消息类型推送 MessageItem 或 AVMessageItem JSON。",
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "query",
+            "required": true,
+            "description": "当前登录用户 id",
+            "schema": {
+              "type": "string",
+              "example": "U202607010001"
+            }
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "Switching Protocols，升级为 WebSocket"
+          },
+          "200": {
+            "description": "当 client_id 缺失时，接口会直接返回普通 JSON 错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoDataResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-apipost-websocket": {
+          "sendMessageSchema": {
+            "$ref": "#/components/schemas/ChatMessageRequest"
+          },
+          "receiveMessageSchemas": [
+            {
+              "$ref": "#/components/schemas/MessageItem"
+            },
+            {
+              "$ref": "#/components/schemas/AVMessageItem"
+            }
+          ]
+        }
+      }
+    },
+    "/static/avatars/{filename}": {
+      "get": {
+        "tags": [
+          "Static"
+        ],
+        "summary": "访问头像文件",
+        "operationId": "getAvatarStaticFile",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "avatar_u1001.png"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "头像文件内容",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/static/files/{filename}": {
+      "get": {
+        "tags": [
+          "Static"
+        ],
+        "summary": "访问聊天文件",
+        "operationId": "getStaticFile",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "demo.pdf"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "文件内容",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BaseResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "description": "业务状态码：200=成功，400=业务错误，500=系统错误",
+            "enum": [
+              200,
+              400,
+              500
+            ],
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "example": "操作成功"
+          }
+        }
+      },
+      "NoDataResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          }
+        ]
+      },
+      "UserProfileResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/UserProfile"
+              }
+            }
+          }
+        ]
+      },
+      "UserAdminListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/UserAdminSummary"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "UserInfoResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/UserProfile"
+              }
+            }
+          }
+        ]
+      },
+      "ContactUserListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ContactUserSummary"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "GroupSimpleListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/GroupSimpleInfo"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "IntDataResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "integer",
+                "example": 0
+              }
+            }
+          }
+        ]
+      },
+      "BooleanDataResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "boolean",
+                "example": true
+              }
+            }
+          }
+        ]
+      },
+      "StringDataResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "string",
+                "example": "S202607010001"
+              }
+            }
+          }
+        ]
+      },
+      "GroupInfoResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/GroupInfoDetail"
+              }
+            }
+          }
+        ]
+      },
+      "AdminGroupListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/GroupAdminSummary"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "GroupMemberListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/GroupMemberInfo"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "UserSessionListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/UserSessionItem"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "GroupSessionListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/GroupSessionItem"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ContactInfoResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ContactInfo"
+              }
+            }
+          }
+        ]
+      },
+      "NewContactListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/NewContactItem"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "AddGroupListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AddGroupItem"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MessageListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MessageItem"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "GroupMessageListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MessageItem"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ChatroomContactListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BaseResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChatroomContactItem"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "telephone",
+          "password"
+        ],
+        "properties": {
+          "telephone": {
+            "type": "string",
+            "description": "手机号",
+            "example": "13600000000"
+          },
+          "password": {
+            "type": "string",
+            "description": "密码",
+            "example": "123456"
+          }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "required": [
+          "telephone",
+          "password",
+          "nickname",
+          "sms_code"
+        ],
+        "properties": {
+          "telephone": {
+            "type": "string",
+            "example": "13600000001"
+          },
+          "password": {
+            "type": "string",
+            "example": "123456"
+          },
+          "nickname": {
+            "type": "string",
+            "example": "test-user"
+          },
+          "sms_code": {
+            "type": "string",
+            "example": "123456"
+          }
+        }
+      },
+      "SmsLoginRequest": {
+        "type": "object",
+        "required": [
+          "telephone",
+          "sms_code"
+        ],
+        "properties": {
+          "telephone": {
+            "type": "string",
+            "example": "13600000000"
+          },
+          "sms_code": {
+            "type": "string",
+            "example": "123456"
+          }
+        }
+      },
+      "UpdateUserInfoRequest": {
+        "type": "object",
+        "required": [
+          "uuid"
+        ],
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "email": {
+            "type": "string",
+            "example": "demo@example.com"
+          },
+          "nickname": {
+            "type": "string",
+            "example": "demo"
+          },
+          "birthday": {
+            "type": "string",
+            "description": "前端展示格式示例为 2024.1.1",
+            "example": "2024.1.1"
+          },
+          "signature": {
+            "type": "string",
+            "example": "hello gochat"
+          },
+          "avatar": {
+            "type": "string",
+            "description": "通常为 /static/avatars/xxx.png 或默认外链头像",
+            "example": "/static/avatars/avatar_u1001.png"
+          }
+        }
+      },
+      "OwnerRequest": {
+        "type": "object",
+        "required": [
+          "owner_id"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          }
+        }
+      },
+      "AbleUsersRequest": {
+        "type": "object",
+        "required": [
+          "uuid_list"
+        ],
+        "properties": {
+          "uuid_list": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "U202607010001",
+              "U202607010002"
+            ]
+          },
+          "is_admin": {
+            "type": "integer",
+            "description": "仅 setAdmin 时使用：0=普通用户，1=管理员",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 1
+          }
+        }
+      },
+      "GetUserInfoRequest": {
+        "type": "object",
+        "required": [
+          "uuid"
+        ],
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "example": "U202607010001"
+          }
+        }
+      },
+      "SendSmsCodeRequest": {
+        "type": "object",
+        "required": [
+          "telephone"
+        ],
+        "properties": {
+          "telephone": {
+            "type": "string",
+            "example": "13600000000"
+          }
+        }
+      },
+      "CreateGroupRequest": {
+        "type": "object",
+        "required": [
+          "owner_id",
+          "name",
+          "add_mode"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "name": {
+            "type": "string",
+            "example": "GoChat 技术群"
+          },
+          "notice": {
+            "type": "string",
+            "example": "欢迎加入群聊"
+          },
+          "add_mode": {
+            "type": "integer",
+            "description": "0=直接加入，1=群主审核",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 0
+          },
+          "avatar": {
+            "type": "string",
+            "example": "/static/avatars/group_gochat.png"
+          }
+        }
+      },
+      "CheckGroupAddModeRequest": {
+        "type": "object",
+        "required": [
+          "group_id"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "example": "G202607010001"
+          }
+        }
+      },
+      "EnterGroupDirectlyRequest": {
+        "type": "object",
+        "required": [
+          "owner_id",
+          "contact_id"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "contact_id": {
+            "type": "string",
+            "description": "群聊 id",
+            "example": "G202607010001"
+          }
+        }
+      },
+      "LeaveGroupRequest": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "group_id"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "group_id": {
+            "type": "string",
+            "example": "G202607010001"
+          }
+        }
+      },
+      "DismissGroupRequest": {
+        "type": "object",
+        "required": [
+          "owner_id",
+          "group_id"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "group_id": {
+            "type": "string",
+            "example": "G202607010001"
+          }
+        }
+      },
+      "GetGroupInfoRequest": {
+        "type": "object",
+        "required": [
+          "group_id"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "example": "G202607010001"
+          }
+        }
+      },
+      "DeleteGroupsRequest": {
+        "type": "object",
+        "required": [
+          "uuid_list"
+        ],
+        "properties": {
+          "uuid_list": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "G202607010001",
+              "G202607010002"
+            ]
+          }
+        }
+      },
+      "SetGroupsStatusRequest": {
+        "type": "object",
+        "required": [
+          "uuid_list",
+          "status"
+        ],
+        "properties": {
+          "uuid_list": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "G202607010001"
+            ]
+          },
+          "status": {
+            "type": "integer",
+            "description": "0=正常，1=禁用，2=解散",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "example": 1
+          }
+        }
+      },
+      "UpdateGroupInfoRequest": {
+        "type": "object",
+        "required": [
+          "owner_id",
+          "uuid"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "uuid": {
+            "type": "string",
+            "description": "群聊 id",
+            "example": "G202607010001"
+          },
+          "name": {
+            "type": "string",
+            "example": "GoChat 产品群"
+          },
+          "avatar": {
+            "type": "string",
+            "example": "/static/avatars/group_gochat_v2.png"
+          },
+          "add_mode": {
+            "type": "integer",
+            "description": "0=直接加入，1=群主审核",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 1
+          },
+          "notice": {
+            "type": "string",
+            "example": "群公告已更新"
+          }
+        }
+      },
+      "GetGroupMemberListRequest": {
+        "type": "object",
+        "required": [
+          "group_id"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "example": "G202607010001"
+          }
+        }
+      },
+      "RemoveGroupMembersRequest": {
+        "type": "object",
+        "required": [
+          "group_id",
+          "owner_id",
+          "uuid_list"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "example": "G202607010001"
+          },
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "uuid_list": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "U202607010002",
+              "U202607010003"
+            ]
+          }
+        }
+      },
+      "SessionOpenRequest": {
+        "type": "object",
+        "required": [
+          "send_id",
+          "receive_id"
+        ],
+        "properties": {
+          "send_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "receive_id": {
+            "type": "string",
+            "description": "用户或群聊 id",
+            "example": "U202607010002"
+          }
+        }
+      },
+      "DeleteSessionRequest": {
+        "type": "object",
+        "required": [
+          "owner_id",
+          "session_id"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "session_id": {
+            "type": "string",
+            "example": "S202607010001"
+          }
+        }
+      },
+      "GetContactInfoRequest": {
+        "type": "object",
+        "required": [
+          "contact_id"
+        ],
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "用户 id 或群聊 id",
+            "example": "U202607010002"
+          }
+        }
+      },
+      "DeleteContactRequest": {
+        "type": "object",
+        "required": [
+          "owner_id",
+          "contact_id"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "contact_id": {
+            "type": "string",
+            "example": "U202607010002"
+          }
+        }
+      },
+      "ApplyContactRequest": {
+        "type": "object",
+        "required": [
+          "owner_id",
+          "contact_id"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "contact_id": {
+            "type": "string",
+            "description": "目标用户 id 或群聊 id",
+            "example": "U202607010002"
+          },
+          "message": {
+            "type": "string",
+            "description": "申请附言",
+            "example": "你好，想加个好友"
+          }
+        }
+      },
+      "PassContactApplyRequest": {
+        "type": "object",
+        "required": [
+          "owner_id",
+          "contact_id"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010002"
+          },
+          "contact_id": {
+            "type": "string",
+            "description": "申请人 id",
+            "example": "U202607010001"
+          }
+        }
+      },
+      "BlackContactRequest": {
+        "type": "object",
+        "required": [
+          "owner_id",
+          "contact_id"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "contact_id": {
+            "type": "string",
+            "example": "U202607010002"
+          }
+        }
+      },
+      "AddGroupListRequest": {
+        "type": "object",
+        "required": [
+          "group_id"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "example": "G202607010001"
+          }
+        }
+      },
+      "BlackApplyRequest": {
+        "type": "object",
+        "required": [
+          "owner_id",
+          "contact_id"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "example": "G202607010001"
+          },
+          "contact_id": {
+            "type": "string",
+            "description": "申请人用户 id 或待处理对象 id",
+            "example": "U202607010002"
+          }
+        }
+      },
+      "GetMessageListRequest": {
+        "type": "object",
+        "required": [
+          "user_one_id",
+          "user_two_id"
+        ],
+        "properties": {
+          "user_one_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "user_two_id": {
+            "type": "string",
+            "example": "U202607010002"
+          }
+        }
+      },
+      "GetGroupMessageListRequest": {
+        "type": "object",
+        "required": [
+          "group_id"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "example": "G202607010001"
+          }
+        }
+      },
+      "GetCurContactListInChatRoomRequest": {
+        "type": "object",
+        "required": [
+          "owner_id",
+          "contact_id"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "contact_id": {
+            "type": "string",
+            "example": "G202607010001"
+          }
+        }
+      },
+      "WsLogoutRequest": {
+        "type": "object",
+        "required": [
+          "owner_id"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          }
+        }
+      },
+      "AvatarUploadRequest": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "建议字段名使用 file；后端实际会处理任意一个上传文件字段"
+          }
+        }
+      },
+      "FileUploadRequest": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "建议字段名使用 file；后端实际会处理任意一个上传文件字段"
+          }
+        }
+      },
+      "ChatMessageRequest": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "type",
+          "send_id",
+          "send_name",
+          "send_avatar",
+          "receive_id"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "example": "S202607010001"
+          },
+          "type": {
+            "type": "integer",
+            "description": "消息类型：0=文本，1=语音（预留），2=文件，3=音视频信令",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "example": 0
+          },
+          "content": {
+            "type": "string",
+            "description": "文本消息时使用",
+            "example": "你好"
+          },
+          "url": {
+            "type": "string",
+            "description": "文件消息时使用，通常为 /static/files/xxx",
+            "example": "/static/files/demo.pdf"
+          },
+          "send_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "send_name": {
+            "type": "string",
+            "example": "alice"
+          },
+          "send_avatar": {
+            "type": "string",
+            "example": "/static/avatars/avatar_u1001.png"
+          },
+          "receive_id": {
+            "type": "string",
+            "description": "接收用户或群聊 id",
+            "example": "U202607010002"
+          },
+          "file_size": {
+            "type": "string",
+            "example": "120KB"
+          },
+          "file_type": {
+            "type": "string",
+            "example": "pdf"
+          },
+          "file_name": {
+            "type": "string",
+            "example": "demo.pdf"
+          },
+          "av_data": {
+            "type": "string",
+            "description": "当 type=3 时传入 JSON 字符串，结构可参考 AVDataPayload",
+            "example": "{\"messageId\":\"PROXY\",\"type\":\"start_call\"}"
+          }
+        }
+      },
+      "AVDataPayload": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "example": "PROXY"
+          },
+          "type": {
+            "type": "string",
+            "example": "start_call"
+          }
+        }
+      },
+      "UserProfile": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "nickname": {
+            "type": "string",
+            "example": "alice"
+          },
+          "telephone": {
+            "type": "string",
+            "example": "13600000000"
+          },
+          "avatar": {
+            "type": "string",
+            "example": "/static/avatars/avatar_u1001.png"
+          },
+          "email": {
+            "type": "string",
+            "example": "alice@example.com"
+          },
+          "gender": {
+            "type": "integer",
+            "description": "0=男，1=女",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 0
+          },
+          "birthday": {
+            "type": "string",
+            "example": "2024.1.1"
+          },
+          "signature": {
+            "type": "string",
+            "example": "keep coding"
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2026-07-01 10:00:00"
+          },
+          "is_admin": {
+            "type": "integer",
+            "description": "0=否，1=是",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 0
+          },
+          "status": {
+            "type": "integer",
+            "description": "0=正常，1=禁用",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 0
+          }
+        }
+      },
+      "UserAdminSummary": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "nickname": {
+            "type": "string",
+            "example": "alice"
+          },
+          "telephone": {
+            "type": "string",
+            "example": "13600000000"
+          },
+          "status": {
+            "type": "integer",
+            "description": "0=正常，1=禁用",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 0
+          },
+          "is_admin": {
+            "type": "integer",
+            "description": "0=否，1=是",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 1
+          },
+          "is_deleted": {
+            "type": "boolean",
+            "example": false
+          }
+        }
+      },
+      "ContactUserSummary": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "example": "U202607010002"
+          },
+          "user_name": {
+            "type": "string",
+            "example": "bob"
+          },
+          "avatar": {
+            "type": "string",
+            "example": "/static/avatars/avatar_u1002.png"
+          }
+        }
+      },
+      "GroupSimpleInfo": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "example": "G202607010001"
+          },
+          "group_name": {
+            "type": "string",
+            "example": "GoChat 技术群"
+          },
+          "avatar": {
+            "type": "string",
+            "example": "/static/avatars/group_gochat.png"
+          }
+        }
+      },
+      "GroupInfoDetail": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "example": "G202607010001"
+          },
+          "name": {
+            "type": "string",
+            "example": "GoChat 技术群"
+          },
+          "notice": {
+            "type": "string",
+            "example": "欢迎加入群聊"
+          },
+          "member_cnt": {
+            "type": "integer",
+            "example": 10
+          },
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "add_mode": {
+            "type": "integer",
+            "description": "0=直接加入，1=群主审核",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 1
+          },
+          "status": {
+            "type": "integer",
+            "description": "0=正常，1=禁用，2=解散",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "example": 0
+          },
+          "avatar": {
+            "type": "string",
+            "example": "/static/avatars/group_gochat.png"
+          },
+          "is_deleted": {
+            "type": "boolean",
+            "example": false
+          }
+        }
+      },
+      "GroupAdminSummary": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "example": "G202607010001"
+          },
+          "name": {
+            "type": "string",
+            "example": "GoChat 技术群"
+          },
+          "owner_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "status": {
+            "type": "integer",
+            "description": "0=正常，1=禁用，2=解散",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "example": 0
+          },
+          "is_deleted": {
+            "type": "boolean",
+            "example": false
+          }
+        }
+      },
+      "GroupMemberInfo": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "example": "U202607010002"
+          },
+          "nickname": {
+            "type": "string",
+            "example": "bob"
+          },
+          "avatar": {
+            "type": "string",
+            "example": "/static/avatars/avatar_u1002.png"
+          }
+        }
+      },
+      "UserSessionItem": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "example": "S202607010001"
+          },
+          "avatar": {
+            "type": "string",
+            "example": "/static/avatars/avatar_u1002.png"
+          },
+          "user_id": {
+            "type": "string",
+            "example": "U202607010002"
+          },
+          "user_name": {
+            "type": "string",
+            "example": "bob"
+          }
+        }
+      },
+      "GroupSessionItem": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "example": "S202607010099"
+          },
+          "group_name": {
+            "type": "string",
+            "example": "GoChat 技术群"
+          },
+          "group_id": {
+            "type": "string",
+            "example": "G202607010001"
+          },
+          "avatar": {
+            "type": "string",
+            "example": "/static/avatars/group_gochat.png"
+          }
+        }
+      },
+      "ContactInfo": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "example": "U202607010002"
+          },
+          "contact_name": {
+            "type": "string",
+            "example": "bob"
+          },
+          "contact_avatar": {
+            "type": "string",
+            "example": "/static/avatars/avatar_u1002.png"
+          },
+          "contact_phone": {
+            "type": "string",
+            "nullable": true,
+            "example": "13600000002"
+          },
+          "contact_email": {
+            "type": "string",
+            "nullable": true,
+            "example": "bob@example.com"
+          },
+          "contact_gender": {
+            "type": "integer",
+            "nullable": true,
+            "description": "0=男，1=女",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 0
+          },
+          "contact_signature": {
+            "type": "string",
+            "nullable": true,
+            "example": "busy coding"
+          },
+          "contact_birthday": {
+            "type": "string",
+            "nullable": true,
+            "example": "2024.1.1"
+          },
+          "contact_notice": {
+            "type": "string",
+            "nullable": true,
+            "example": "群公告内容"
+          },
+          "contact_members": {
+            "type": "array",
+            "nullable": true,
+            "description": "群聊成员 id 列表；联系人为用户时通常为空",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "U202607010001",
+              "U202607010002"
+            ]
+          },
+          "contact_member_cnt": {
+            "type": "integer",
+            "nullable": true,
+            "example": 2
+          },
+          "contact_owner_id": {
+            "type": "string",
+            "nullable": true,
+            "example": "U202607010001"
+          },
+          "contact_add_mode": {
+            "type": "integer",
+            "nullable": true,
+            "description": "群聊加群方式：0=直接加入，1=群主审核",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 1
+          }
+        }
+      },
+      "NewContactItem": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "example": "U202607010003"
+          },
+          "contact_name": {
+            "type": "string",
+            "example": "charlie"
+          },
+          "contact_avatar": {
+            "type": "string",
+            "example": "/static/avatars/avatar_u1003.png"
+          },
+          "message": {
+            "type": "string",
+            "example": "通过一下好友申请"
+          }
+        }
+      },
+      "AddGroupItem": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "example": "U202607010003"
+          },
+          "contact_name": {
+            "type": "string",
+            "example": "charlie"
+          },
+          "contact_avatar": {
+            "type": "string",
+            "example": "/static/avatars/avatar_u1003.png"
+          },
+          "message": {
+            "type": "string",
+            "example": "想加入这个群"
+          }
+        }
+      },
+      "MessageItem": {
+        "type": "object",
+        "properties": {
+          "send_id": {
+            "type": "string",
+            "example": "U202607010001"
+          },
+          "send_name": {
+            "type": "string",
+            "example": "alice"
+          },
+          "send_avatar": {
+            "type": "string",
+            "example": "/static/avatars/avatar_u1001.png"
+          },
+          "receive_id": {
+            "type": "string",
+            "example": "U202607010002"
+          },
+          "type": {
+            "type": "integer",
+            "description": "0=文本，1=语音，2=文件，3=音视频信令",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "example": 0
+          },
+          "content": {
+            "type": "string",
+            "example": "你好"
+          },
+          "url": {
+            "type": "string",
+            "example": "/static/files/demo.pdf"
+          },
+          "file_type": {
+            "type": "string",
+            "example": "pdf"
+          },
+          "file_name": {
+            "type": "string",
+            "example": "demo.pdf"
+          },
+          "file_size": {
+            "type": "string",
+            "example": "120KB"
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2026-07-01 12:00:00"
+          }
+        }
+      },
+      "AVMessageItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MessageItem"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "av_data": {
+                "type": "string",
+                "example": "{\"messageId\":\"PROXY\",\"type\":\"start_call\"}"
+              }
+            }
+          }
+        ]
+      },
+      "ChatroomContactItem": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "example": "U202607010002"
+          }
+        }
+      }
+    }
+  }
+}

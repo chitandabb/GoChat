@@ -75,6 +75,7 @@ import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { useStore } from "vuex";
 import AuthShell from "@/components/AuthShell.vue";
+import { connectSocket } from "@/utils/ws";
 
 const loginData = reactive({
   telephone: "",
@@ -96,38 +97,25 @@ const handleLogin = async () => {
     }
     console.log(store.state.backendUrl, store.state.wsUrl);
     const response = await axios.post(
-      store.state.backendUrl + "/login",
+      store.state.apiUrl + "/auth/login",
       loginData
     );
     console.log(response);
-    if (response.data.code == 200) {
-      if (response.data.data.status == 1) {
+    if (response.data.code == 0) {
+      const data = response.data.data;
+      if (data.user_info.status == 1) {
         ElMessage.error("该账号已被封禁，请联系管理员。");
         return;
       }
       try {
         ElMessage.success(response.data.message);
-        if (!response.data.data.avatar.startsWith("http")) {
-          response.data.data.avatar =
-            store.state.backendUrl + response.data.data.avatar;
+        store.commit("setAccessToken", data.access_token);
+        const userInfo = data.user_info;
+        if (!userInfo.avatar.startsWith("http")) {
+          userInfo.avatar = store.state.backendUrl + userInfo.avatar;
         }
-        store.commit("setUserInfo", response.data.data);
-        const wsUrl =
-          store.state.wsUrl + "/wss?client_id=" + response.data.data.uuid;
-        console.log(wsUrl);
-        store.state.socket = new WebSocket(wsUrl);
-        store.state.socket.onopen = () => {
-          console.log("WebSocket连接已打开");
-        };
-        store.state.socket.onmessage = (message) => {
-          console.log("收到消息：", message.data);
-        };
-        store.state.socket.onclose = () => {
-          console.log("WebSocket连接已关闭");
-        };
-        store.state.socket.onerror = () => {
-          console.log("WebSocket连接发生错误");
-        };
+        store.commit("setUserInfo", userInfo);
+        connectSocket(store);
         router.push("/chat/sessionlist");
       } catch (error) {
         console.log(error);
