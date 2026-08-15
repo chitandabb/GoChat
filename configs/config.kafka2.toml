@@ -1,11 +1,10 @@
-# kafka 模式运行配置（示例 / 压测用）
-# 用法：$env:CONFIG_FILE = "configs/config.kafka.toml"; go run ./cmd/gochat
-# 依赖：docker compose up -d kafka 或任意可达的 Kafka broker。
+# kafka 模式运行配置 - 实例2（双实例扩容测试用，仅端口不同）
+# 用法：$env:CONFIG_FILE = "configs/config.kafka2.toml"; go run ./cmd/gochat
 
 [serverConfig]
 appName = "gochat"
 host = "0.0.0.0"
-port = 8000
+port = 8001
 tlsEnabled = false
 sslRedirect = false
 tlsCertFile = ""
@@ -44,7 +43,7 @@ returnVerifyCode = false
 autoRetry = 1
 
 [logConfig]
-logPath = "./logs/gochat.log"
+logPath = "./logs/gochat2.log"
 
 [kafkaConfig]
 messageMode = "kafka"

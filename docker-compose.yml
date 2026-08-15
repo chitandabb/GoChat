@@ -31,8 +31,8 @@ services:
     environment:
       TZ: Asia/Shanghai
     ports:
-      # 6380:6379 —— 避开 mesguard 等其他项目占用的 6379，GoChat 独占
-      - "6380:6379"
+      # 6381:6379 —— 避开 mesguard 等其他项目占用的 6379/6380，GoChat 独占 6381
+      - "6381:6379"
     volumes:
       - ${GOCHAT_REDIS_DATA:-gochat_redis-data}:/data
     healthcheck:

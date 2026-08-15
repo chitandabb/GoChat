@@ -25,16 +25,28 @@ const (
 var (
 	statusCh      = make(chan string, 1024)
 	statusUpdater sync.Once
+	// statusDedup 状态提交去重（8n 节）：群消息扇出时同一条消息被推送给
+	// 400 个成员，Write goroutine 每推一次就提交一次状态——400 倍重复
+	// 提交瞬间打满 statusCh（实测 400k 次提交、21.4 万次丢弃告警，日志
+	// 洪峰把磁盘写死、群分发被拖慢到 60.8% 送达）。状态是"消息级"语义，
+	// 同一条消息只需提交一次；条目在 worker 批量刷盘后删除。
+	statusDedup sync.Map // uuid -> struct{}
 )
 
-// submitStatus 提交一条消息的 Sent 状态（非阻塞；通道满时丢弃，状态更新是尽力而为）。
+// submitStatus 提交一条消息的 Sent 状态（非阻塞；同一条消息的重复推送
+// 只提交一次；通道满时丢弃，状态更新是尽力而为）。
 func submitStatus(uuid string) {
 	statusUpdater.Do(func() {
 		go runStatusUpdater()
 	})
+	if _, loaded := statusDedup.LoadOrStore(uuid, struct{}{}); loaded {
+		return // 同一条消息的重复推送：状态已在途
+	}
 	select {
 	case statusCh <- uuid:
 	default:
+		// 通道满丢弃：删除去重条目，允许后续推送重试提交。
+		statusDedup.Delete(uuid)
 		zlog.Warn("状态更新通道已满，丢弃本次状态回写")
 	}
 }
@@ -55,6 +67,11 @@ func runStatusUpdater() {
 			Where("uuid IN ?", uuids).
 			Update("status", message_status_enum.Sent).Error; err != nil {
 			zlog.Error(err.Error())
+		}
+		// 8n 节：刷盘后释放去重条目（成功失败都释放——失败仅记日志，
+		// 状态更新是尽力而为，与去重前语义一致）。
+		for _, u := range uuids {
+			statusDedup.Delete(u)
 		}
 	}
 

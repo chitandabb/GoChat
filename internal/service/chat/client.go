@@ -11,9 +11,11 @@ import (
 	myKafka "gochat/internal/service/kafka"
 	"gochat/pkg/constants"
 	"gochat/pkg/zlog"
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,6 +25,74 @@ type MessageBack struct {
 	Uuid    string
 }
 
+// Kafka 模式发送路径异步化（8n 节）：WS 读循环只入队，后台 sendDrainLoop
+// 攒批后一次 WriteMessages 提交多条。此前逐条同步写 ChatWriter
+// （BatchSize=10/BatchTimeout=10ms，acks=one）在空 writer 上每次约 10ms，
+// 读循环被钳制在 ~100 msg/s/连接（压测实测 5 连接 1000 msg/s 目标仅
+// ~532 msg/s 入 topic，其余堆积 TCP 缓冲、连接关闭时丢弃，端到端延迟
+// 虚高到 P50=3.2s）；批量提交让 writer 的 BatchSize=10 生效（64 条 ≈
+// 7 次批量往返 ≈ 10-16ms）。入队不阻塞读循环；通道满（上行持续过载）
+// 丢弃并记错误——与同步版"写失败仅记日志"的语义一致（消息丢失可观测）。
+// 8n 复测：容量 8192 时 50 对 × 200 条突发（1 万条）在 0.3s 内涌来，
+// drainer 写入 ~7k msg/s 追不上，溢出丢弃 1615 条（order 压测实测）；
+// 提到 16384（≈10MB 上限）覆盖 1 万级突发（峰值积压 ~13k < 容量）。
+var (
+	sendCh     = make(chan []byte, 16384)
+	sendChOnce sync.Once
+)
+
+// enqueueSend 非阻塞入队一条上行消息（Kafka 模式读循环专用）。
+func enqueueSend(raw []byte) {
+	sendChOnce.Do(func() {
+		go sendDrainLoop()
+	})
+	select {
+	case sendCh <- raw:
+	default:
+		zlog.Error("发送通道已满，丢弃消息（上行持续过载）")
+	}
+}
+
+// sendDrainLoop 后台攒批写 chat topic（8n 节）：一次 WriteMessages 提交
+// 多条，按 receiveId 分区键保序（通道 FIFO + writer 按分区发送，同一
+// 会话/群的消息保持原序）。
+func sendDrainLoop() {
+	const maxBatch = 64
+	for {
+		raw := <-sendCh
+		batch := make([][]byte, 0, maxBatch)
+		batch = append(batch, raw)
+	collect:
+		for len(batch) < maxBatch {
+			select {
+			case q := <-sendCh:
+				batch = append(batch, q)
+			default:
+				break collect
+			}
+		}
+		msgs := make([]kafka.Message, 0, len(batch))
+		for _, b := range batch {
+			var message request.ChatMessageRequest
+			if err := json.Unmarshal(b, &message); err != nil {
+				zlog.Error("上行消息解析失败: " + err.Error())
+				continue
+			}
+			key := message.ReceiveId
+			if key == "" {
+				key = message.SessionId
+			}
+			msgs = append(msgs, kafka.Message{Key: []byte(key), Value: b})
+		}
+		if len(msgs) == 0 {
+			continue
+		}
+		if err := myKafka.KafkaService.ChatWriter.WriteMessages(context.Background(), msgs...); err != nil {
+			zlog.Error("批量发送写入失败: " + err.Error())
+		}
+	}
+}
+
 // Client 是一条 WebSocket 连接。
 //
 // 执行模型（见 docs/design/messaging.md）：
@@ -30,15 +100,21 @@ type MessageBack struct {
 //   - Write goroutine：消费 SendBack → 写连接（唯一写者）→ 置 Sent；空闲时发 Ping；
 //   - 回收 goroutine：两个 goroutine 都退出后，由连接管理方关闭 channel（关闭权唯一）。
 type Client struct {
-	Conn       *websocket.Conn
-	Uuid       string
-	SendTo     chan []byte       // 给 server 端（上行积压缓冲，Flush goroutine 转发）
-	SendBack   chan *MessageBack // 给前端（下行）
-	dropCount  int               // 连续丢弃计数，仅分发循环（单 goroutine）读写
-	readDone   chan struct{}
-	writeDone  chan struct{}
-	flushDone  chan struct{}
-	closeOnce  sync.Once
+	Conn      *websocket.Conn
+	Uuid      string
+	SendTo    chan []byte       // 给 server 端（上行积压缓冲，Flush goroutine 转发）
+	SendBack  chan *MessageBack // 给前端（下行）
+	dropCount int               // 连续丢弃计数，仅分发循环（单 goroutine）读写
+	readDone  chan struct{}
+	writeDone chan struct{}
+	flushDone chan struct{}
+	closeOnce sync.Once
+	// closed 8m 节：回收 goroutine 关闭 SendBack 前置位（原子）。推送路径
+	// （push / 欢迎消息）发送前检查——此前回收方先 close(SendBack) 而 client
+	// 仍留在 Clients map 中，推送命中即 "send on closed channel" panic，
+	// 且 panic 发生在持锁期间（无 defer），锁被永久占用，分发循环死锁
+	// （实测：全站连接堆积 299+，见 docs/notes/压测报告.md 8m 节）。
+	closed atomic.Bool
 }
 
 var upgrader = websocket.Upgrader{
@@ -73,8 +149,6 @@ func originAllowed(origin string) bool {
 	return false
 }
 
-var ctx = context.Background()
-
 var messageMode = config.GetConfig().KafkaConfig.MessageMode
 
 // Flush 把本连接 SendTo 中的积压消息持续转发到全局 Transmit。
@@ -85,7 +159,7 @@ var messageMode = config.GetConfig().KafkaConfig.MessageMode
 func (c *Client) Flush() {
 	defer close(c.flushDone)
 	for msg := range c.SendTo {
-		ChatServer.SendMessageToTransmit(msg)
+		ChatServer.SendMessageToTransmit(msg, "", nil)
 	}
 }
 
@@ -120,23 +194,24 @@ func (c *Client) Read() {
 			select {
 			case c.SendTo <- jsonMessage:
 			default:
-				c.SendBack <- &MessageBack{
-					Message: []byte("由于目前同一时间过多用户发送消息，消息发送失败，请稍后重试"),
+				// 8m 节：拒绝回写改非阻塞（原为阻塞发送）——Write goroutine
+				// 若已退出/正在退出，阻塞发送会卡死 Read goroutine，回收流程
+				// 等待 readDone 随之挂起（连接泄漏）。
+				if !c.closed.Load() {
+					select {
+					case c.SendBack <- &MessageBack{
+						Message: []byte("由于目前同一时间过多用户发送消息，消息发送失败，请稍后重试"),
+					}:
+					default:
+					}
 				}
 			}
 		} else {
 			// Kafka 模式：以 receiveId 为分区键，保证同一会话/群的消息进入同一分区保序。
-			key := message.ReceiveId
-			if key == "" {
-				key = message.SessionId
-			}
-			if err := myKafka.KafkaService.ChatWriter.WriteMessages(ctx, kafka.Message{
-				Key:   []byte(key),
-				Value: jsonMessage,
-			}); err != nil {
-				zlog.Error(err.Error())
-			}
-			zlog.Info("已发送消息：" + string(jsonMessage))
+			// 8n 节：读循环不再逐条同步写 ChatWriter（每条约 10ms，读循环被钳制在
+			// ~100 msg/s/连接，实测 30% 上行堆积 TCP 缓冲在断开时丢弃）——非阻塞入队，
+			// 由 sendDrainLoop 攒批一次提交多条；通道满丢弃并记错误（见 enqueueSend）。
+			enqueueSend(jsonMessage)
 		}
 	}
 }
@@ -171,6 +246,12 @@ func (c *Client) Write() {
 				zlog.Error(err.Error())
 				return
 			}
+		case <-c.readDone:
+			// 8m 节：读侧已退出（连接断开/读错误，closeConn 已关 TCP）——
+			// 写侧同步退出，回收流程不再等待下一次 Ping 周期（此前空闲连接
+			// 断开后 Write 需等 PingPeriod 才感知，回收整体挂起，
+			// 每断连泄漏 Read/Write/Flush 三个 goroutine 直到超时）。
+			return
 		}
 	}
 }
@@ -194,6 +275,13 @@ func NewClientInit(c *gin.Context, clientId string) {
 		zlog.Error(err.Error())
 		return
 	}
+	// 8n 节：TCP_NODELAY——关闭 Nagle 后小帧即时发送。此前下行小帧受
+	// Nagle + 延迟 ACK 抑制（实测 ~8ms/帧），突发推送时成员连接排空
+	// 仅 ~125 msg/s，SendBack 队列被打满误判慢客户端丢弃（压测实测：
+	// 群 500/s 扇出时 75% 推送被丢弃，见 docs/notes/压测报告.md 8n 节）。
+	if tcp, ok := conn.UnderlyingConn().(*net.TCPConn); ok {
+		_ = tcp.SetNoDelay(true)
+	}
 	client := &Client{
 		Conn:      conn,
 		Uuid:      clientId,
@@ -203,20 +291,31 @@ func NewClientInit(c *gin.Context, clientId string) {
 		writeDone: make(chan struct{}),
 		flushDone: make(chan struct{}),
 	}
+	// 8m 节修复：先启动 Read/Write/Flush 三个 goroutine，再投递登录。
+	// 此前顺序相反——dispatchOnce 处理 Login case 时往 SendBack 发欢迎消息，
+	// 若 Write goroutine 尚未启动/已退出（连接在登录排队期间断开），
+	// SendBack 无人消费，阻塞发送会把分发循环永久卡死（压测实测：
+	// 299 个登录请求堆积，全部新连接不可用，见 docs/notes/压测报告.md 8m 节）。
+	go client.Read()
+	go client.Write()
+	go client.Flush()
 	if kafkaConfig.MessageMode == "channel" {
 		ChatServer.SendClientToLogin(client)
 	} else {
 		KafkaChatServer.SendClientToLogin(client)
 	}
-	go client.Read()
-	go client.Write()
-	go client.Flush()
-	// 回收：三个 goroutine 都退出后统一关闭 channel（关闭权唯一），并记录离线时间。
+	// 回收：等读/写 goroutine 退出后，先关 SendTo 让 Flush 退出，再收尾。
+	// 8m 节修复：此前顺序为"等 flushDone → 关 SendTo"，而 Flush 只有在
+	// SendTo 关闭后才退出（for range），形成循环等待——每次断连泄漏
+	// Flush 与回收两个 goroutine（压测审查发现，见 docs/notes/压测报告.md 8m 节）。
 	go func() {
 		<-client.readDone
 		<-client.writeDone
+		close(client.SendTo) // Flush 退出条件（先于等待 flushDone）
 		<-client.flushDone
-		close(client.SendTo)
+		// 8m 节：置 closed 标记后再关 SendBack——推送路径据此跳过本连接，
+		// 避免"已关闭 channel 发送 panic"（此前实测 panic 死锁分发循环）。
+		client.closed.Store(true)
 		close(client.SendBack)
 		MarkOffline(clientId)
 	}()

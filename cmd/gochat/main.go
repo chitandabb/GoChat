@@ -9,12 +9,20 @@ import (
 	"gochat/internal/service/kafka"
 	myredis "gochat/internal/service/redis"
 	"gochat/pkg/zlog"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
 )
 
 func main() {
+	// 0. 调试/诊断端点（pprof，仅本机）：goroutine/堆/CPU 采样按需开启，
+	// 默认零开销。
+	go func() {
+		_ = http.ListenAndServe("127.0.0.1:6061", nil)
+	}()
+
 	// 1. 先把配置整体读出来，后面初始化数据库、HTTP 服务、聊天服务都会用到。
 	conf := config.GetConfig()
 	host := conf.ServerConfig.Host

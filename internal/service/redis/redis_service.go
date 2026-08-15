@@ -38,6 +38,55 @@ func SetKeyEx(key string, value string, timeout time.Duration) error {
 	return nil
 }
 
+// SetKeyExPipelined 批量写缓存键（Pipeline，合并为一次网络往返）：
+// 用于"落库成功后批量置 Kafka 幂等键 done"等高频批量场景——逐条 SETEX
+// 在批量路径上每消息一次往返，实测成为消费吞吐瓶颈的一部分（8n 节：
+// 64 条/批 × ~1ms Redis + ~10ms Kafka 同步写 = ~770ms/批，消费上限 ~83 msg/s）。
+func SetKeyExPipelined(keys []string, value string, timeout time.Duration) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	pipe := redisClient.Pipeline()
+	for _, key := range keys {
+		pipe.Set(ctx, key, value, timeout)
+	}
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// SetNX 原子"不存在才写入"：返回 true 表示本次调用成功写入（首次），
+// false 表示 key 已存在（重复）。用于 Kafka 消费幂等键（topic:partition:offset）。
+func SetNX(key string, value string, timeout time.Duration) (bool, error) {
+	ok, err := redisClient.SetNX(ctx, key, value, timeout).Result()
+	if err != nil {
+		return false, err
+	}
+	return ok, nil
+}
+
+// SetNXPipelined 批量原子认领（Pipeline，一次网络往返）：按 keys 顺序
+// 返回每个 key 的 SETNX 结果（true=本次写入成功/首次认领，false=键已存在）。
+// 8n 节：消费 reader 逐条 SETNX 认领（每消息 1 次 Redis 往返 ~1-2ms）把
+// 消费钳制在 ~800 msg/s；整批流水线认领 64 条 = 1 次往返，与批量落库同量级。
+func SetNXPipelined(keys []string, value string, timeout time.Duration) ([]bool, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	pipe := redisClient.Pipeline()
+	cmds := make([]*redis.BoolCmd, len(keys))
+	for i, key := range keys {
+		cmds[i] = pipe.SetNX(ctx, key, value, timeout)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return nil, err
+	}
+	res := make([]bool, len(keys))
+	for i, cmd := range cmds {
+		res[i], _ = cmd.Result()
+	}
+	return res, nil
+}
+
 func GetKey(key string) (string, error) {
 	value, err := redisClient.Get(ctx, key).Result()
 	if err != nil {

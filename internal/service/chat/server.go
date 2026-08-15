@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/go-sql-driver/mysql"
+	"github.com/segmentio/kafka-go"
+	"go.uber.org/zap"
 	"gochat/internal/dao"
 	"gochat/internal/dto/request"
 	"gochat/internal/dto/respond"
@@ -15,18 +17,44 @@ import (
 	"gochat/pkg/enum/message/message_type_enum"
 	"gochat/pkg/util/random"
 	"gochat/pkg/zlog"
-	"go.uber.org/zap"
 	"strings"
 	"sync"
 	"time"
 )
 
 type Server struct {
-	Clients  map[string]*Client
-	mutex    *sync.Mutex
-	Transmit chan []byte  // 转发通道
-	Login    chan *Client // 登录通道
-	Logout   chan *Client // 退出登录通道
+	// Kafka 模式回调（8m 节）：落库成功（含 duplicate）后提交 offset 并清除
+	// in-flight（KafkaCommit）；落库失败后登记重试（KafkaRetry）。channel
+	// 模式为 nil，走原"本地直推"路径。
+	KafkaCommit func(msg kafka.Message)
+	KafkaRetry  func(msg kafka.Message)
+	Clients map[string]*Client
+	mutex   *sync.Mutex
+	// Transmit 携带待分发的上行消息：channel 模式由客户端 Flush 直接投递；
+	// Kafka 模式由 kafka_server 消费 chat topic 后转入（8k 节）。
+	Transmit chan *TransmitData // 转发通道
+	Login    chan *Client       // 登录通道
+	Logout   chan *Client       // 退出登录通道
+}
+
+// TransmitData 携带一条待分发的上行消息；Kafka 模式下附带消费幂等键
+// （topic:partition:offset:时间戳），落库时写入 message.kafka_key 唯一索引，
+// 由 DB 兜底防重放重复落库（见 docs/notes/压测报告.md 8j 节）；channel 模式为空。
+// KafkaMsg（8m 节）：Kafka 模式 Transmit 路径携带原 Kafka 消息，落库成功由
+// KafkaCommit 回调提交 offset、失败由 KafkaRetry 登记重试——"先落库、后提交"
+// 覆盖全部消息类型；channel 模式为 nil。
+type TransmitData struct {
+	Data     []byte
+	KafkaKey string
+	KafkaMsg *kafka.Message
+}
+
+// PersistedText 携带已落库的文本消息与原始请求：channel 模式供本地推送复用；
+// Kafka 模式（8k 节）作为 chat_push 推送事件的载荷，落库后广播、各实例
+// 消费后查本地 Clients map 下发（跨实例可达）。
+type PersistedText struct {
+	Req *request.ChatMessageRequest
+	Msg *model.Message
 }
 
 var ChatServer *Server
@@ -36,7 +64,7 @@ func init() {
 		ChatServer = &Server{
 			Clients:  make(map[string]*Client),
 			mutex:    &sync.Mutex{},
-			Transmit: make(chan []byte, constants.CHANNEL_SIZE),
+			Transmit: make(chan *TransmitData, constants.CHANNEL_SIZE),
 			Login:    make(chan *Client, constants.CHANNEL_SIZE),
 			Logout:   make(chan *Client, constants.CHANNEL_SIZE),
 		}
@@ -83,340 +111,420 @@ func (s *Server) dispatchOnce() {
 	select {
 	case client := <-s.Login:
 		{
-				s.mutex.Lock()
-				s.Clients[client.Uuid] = client
-				s.mutex.Unlock()
-				zlog.Debug(fmt.Sprintf("欢迎来到GoChat聊天服务器，亲爱的用户%s\n", client.Uuid))
-				// 欢迎消息经 SendBack 下发（连接唯一写者在 Write goroutine，避免多写者竞态）
-				client.SendBack <- &MessageBack{Message: []byte("欢迎来到GoChat聊天服务器")}
+			s.mutex.Lock()
+			s.Clients[client.Uuid] = client
+			s.mutex.Unlock()
+			zlog.Debug(fmt.Sprintf("欢迎来到GoChat聊天服务器，亲爱的用户%s\n", client.Uuid))
+			// 8m 节修复：欢迎消息非阻塞投递（原为阻塞发送）——连接若在登录排队
+			// 期间断开，Write goroutine 已退出、SendBack 无人消费，阻塞发送会
+			// 把分发循环永久卡死（实测 299 个登录堆积）。投递失败视为连接已死，
+			// 走 Logout 回收。closed 检查防"已关闭 channel 发送 panic"。
+			if !client.closed.Load() {
+				select {
+				case client.SendBack <- &MessageBack{Message: []byte("欢迎来到GoChat聊天服务器")}:
+				default:
+					zlog.Warn("欢迎消息投递失败，连接已不可用", zap.String("uuid", client.Uuid))
+					select {
+					case s.Logout <- client:
+					default:
+					}
+					client.closeConn()
+				}
 			}
+		}
 
-		case client := <-s.Logout:
-			{
-				s.mutex.Lock()
-				delete(s.Clients, client.Uuid)
-				s.mutex.Unlock()
-				zlog.Info(fmt.Sprintf("用户%s退出登录\n", client.Uuid))
-				// 关闭连接触发 Read/Write goroutine 退出，回收路径统一清理 channel 并记录离线时间
-				client.closeConn()
-				MarkOffline(client.Uuid)
+	case client := <-s.Logout:
+		{
+			s.mutex.Lock()
+			delete(s.Clients, client.Uuid)
+			s.mutex.Unlock()
+			zlog.Info(fmt.Sprintf("用户%s退出登录\n", client.Uuid))
+			// 关闭连接触发 Read/Write goroutine 退出，回收路径统一清理 channel 并记录离线时间
+			client.closeConn()
+			MarkOffline(client.Uuid)
+		}
+
+	case data := <-s.Transmit:
+		{
+			msgStart := time.Now()
+			var chatMessageReq request.ChatMessageRequest
+			if err := json.Unmarshal(data.Data, &chatMessageReq); err != nil {
+				zlog.Error(err.Error())
 			}
+			if chatMessageReq.Type == message_type_enum.Text {
+				// 存message
+				message := model.Message{
+					Uuid:       fmt.Sprintf("M%s", random.GetNowAndLenRandomString(11)),
+					SessionId:  chatMessageReq.SessionId,
+					Type:       chatMessageReq.Type,
+					Content:    chatMessageReq.Content,
+					Url:        "",
+					SendId:     chatMessageReq.SendId,
+					SendName:   chatMessageReq.SendName,
+					SendAvatar: chatMessageReq.SendAvatar,
+					ReceiveId:  chatMessageReq.ReceiveId,
+					FileSize:   "0B",
+					FileType:   "",
+					FileName:   "",
+					Status:     message_status_enum.Unsent,
+					CreatedAt:  time.Now(),
+					AVdata:     "",
+				}
+				// 对SendAvatar去除前面/static之前的所有内容，防止ip前缀引入
+				message.SendAvatar = normalizePath(message.SendAvatar)
+				// Kafka 模式：携带消费幂等键，由 kafka_key 唯一索引兜底防重放重复落库
+				if data.KafkaKey != "" {
+					kk := data.KafkaKey
+					message.KafkaKey = &kk
+				}
+				duplicate, err := persistMessage(&message)
+				if err != nil {
+					zlog.Error(err.Error())
+					// Kafka 模式（8m 节）：落库失败不丢——登记重试（保持
+					// in-flight、offset 未提交，连续水位不越过）；channel 模式
+					// 原语义：丢弃（发送方已收到失败回执）。
+					if s.KafkaRetry != nil && data.KafkaMsg != nil {
+						s.KafkaRetry(*data.KafkaMsg)
+					}
+					return
+				}
+				if duplicate {
+					// 重复投递（如 Kafka 重复消费），已处理过：完成，提交 offset。
+					if s.KafkaCommit != nil && data.KafkaMsg != nil {
+						s.KafkaCommit(*data.KafkaMsg)
+					}
+					return
+				}
+				// 落库成功：置幂等键 done，重放时跳过（未完成保持 pending 重试）
+				if data.KafkaKey != "" {
+					markDoneKey(data.KafkaKey)
+				}
+				// 8m 节：落库成功才提交 offset（manual commit 覆盖 Transmit 路径）。
+				if s.KafkaCommit != nil && data.KafkaMsg != nil {
+					s.KafkaCommit(*data.KafkaMsg)
+				}
+				if data.KafkaKey != "" {
+					// Kafka 模式（8k 节）：推送经 chat_push 广播，所有实例消费后
+					// 查本地 Clients map 下发——多实例分摊分区时跨实例也能送达。
+					// channel 模式保持本地直推（进程内无跨实例问题）。
+					publishPush(&PersistedText{Req: &chatMessageReq, Msg: &message})
+				} else {
+					s.dispatchPersistedText(msgStart, &chatMessageReq, &message)
+				}
+			} else if chatMessageReq.Type == message_type_enum.File {
+				// 存message
+				message := model.Message{
+					Uuid:       fmt.Sprintf("M%s", random.GetNowAndLenRandomString(11)),
+					SessionId:  chatMessageReq.SessionId,
+					Type:       chatMessageReq.Type,
+					Content:    "",
+					Url:        chatMessageReq.Url,
+					SendId:     chatMessageReq.SendId,
+					SendName:   chatMessageReq.SendName,
+					SendAvatar: chatMessageReq.SendAvatar,
+					ReceiveId:  chatMessageReq.ReceiveId,
+					FileSize:   chatMessageReq.FileSize,
+					FileType:   chatMessageReq.FileType,
+					FileName:   chatMessageReq.FileName,
+					Status:     message_status_enum.Unsent,
+					CreatedAt:  time.Now(),
+					AVdata:     "",
+				}
+				// 对SendAvatar去除前面/static之前的所有内容，防止ip前缀引入
+				message.SendAvatar = normalizePath(message.SendAvatar)
+				// Kafka 模式：携带消费幂等键，由 kafka_key 唯一索引兜底防重放重复落库
+				if data.KafkaKey != "" {
+					kk := data.KafkaKey
+					message.KafkaKey = &kk
+				}
+				duplicate, err := persistMessage(&message)
+				if err != nil {
+					zlog.Error(err.Error())
+					// Kafka 模式（8m 节）：落库失败登记重试，不丢。
+					if s.KafkaRetry != nil && data.KafkaMsg != nil {
+						s.KafkaRetry(*data.KafkaMsg)
+					}
+					return
+				}
+				if duplicate {
+					if s.KafkaCommit != nil && data.KafkaMsg != nil {
+						s.KafkaCommit(*data.KafkaMsg)
+					}
+					return
+				}
+				// 落库成功：置幂等键 done，重放时跳过（未完成保持 pending 重试）
+				if data.KafkaKey != "" {
+					markDoneKey(data.KafkaKey)
+				}
+				// 8m 节：落库成功才提交 offset。
+				if s.KafkaCommit != nil && data.KafkaMsg != nil {
+					s.KafkaCommit(*data.KafkaMsg)
+				}
+				if message.ReceiveId[0] == 'U' { // 发送给User
+					messageRsp := respond.GetMessageListRespond{
+						SendId:     message.SendId,
+						SendName:   message.SendName,
+						SendAvatar: chatMessageReq.SendAvatar,
+						ReceiveId:  message.ReceiveId,
+						Type:       message.Type,
+						Content:    message.Content,
+						Url:        message.Url,
+						FileSize:   message.FileSize,
+						FileName:   message.FileName,
+						FileType:   message.FileType,
+						CreatedAt:  message.CreatedAt.Format("2006-01-02 15:04:05"),
+					}
+					jsonMessage, err := json.Marshal(messageRsp)
+					if err != nil {
+						zlog.Error(err.Error())
+					}
+					var messageBack = &MessageBack{
+						Message: jsonMessage,
+						Uuid:    message.Uuid,
+					}
+					s.mutex.Lock()
+					if receiveClient, ok := s.Clients[message.ReceiveId]; ok {
+						s.push(receiveClient, messageBack)
+					}
+					if sendClient := s.Clients[message.SendId]; sendClient != nil {
+						s.push(sendClient, messageBack)
+					}
+					s.mutex.Unlock()
 
-		case data := <-s.Transmit:
-			{
-				msgStart := time.Now()
-				var chatMessageReq request.ChatMessageRequest
-				if err := json.Unmarshal(data, &chatMessageReq); err != nil {
+					// Cache-Aside：写路径只做失效删除（读 miss 时回源重建），
+					// 不再逐条读改写（RMW）。删除双向 key，避免对方缓存脏读。
+					invalidateUserMessageList(message.SendId, message.ReceiveId)
+				} else {
+					messageRsp := respond.GetGroupMessageListRespond{
+						SendId:     message.SendId,
+						SendName:   message.SendName,
+						SendAvatar: chatMessageReq.SendAvatar,
+						ReceiveId:  message.ReceiveId,
+						Type:       message.Type,
+						Content:    message.Content,
+						Url:        message.Url,
+						FileSize:   message.FileSize,
+						FileName:   message.FileName,
+						FileType:   message.FileType,
+						CreatedAt:  message.CreatedAt.Format("2006-01-02 15:04:05"),
+					}
+					jsonMessage, err := json.Marshal(messageRsp)
+					if err != nil {
+						zlog.Error(err.Error())
+					}
+					var messageBack = &MessageBack{
+						Message: jsonMessage,
+						Uuid:    message.Uuid,
+					}
+					// 8n 节：群成员缓存（见 cachedGroupMembers）——逐事件 MySQL
+					// 查询实测 5-25ms/次，1000 事件分发超压测排空窗口。
+					members := cachedGroupMembers(message.ReceiveId)
+					s.mutex.Lock()
+					for _, member := range members {
+						if member != message.SendId {
+							if receiveClient, ok := s.Clients[member]; ok {
+								s.push(receiveClient, messageBack)
+							}
+						} else {
+							if sendClient := s.Clients[message.SendId]; sendClient != nil {
+								s.push(sendClient, messageBack)
+							}
+						}
+					}
+					s.mutex.Unlock()
+
+					// Cache-Aside：写路径只做失效删除
+					if err := myredis.DelKeys("group_messagelist_" + message.ReceiveId); err != nil {
+						zlog.Error(err.Error())
+					}
+				}
+			} else if chatMessageReq.Type == message_type_enum.AudioOrVideo {
+				var avData request.AVData
+				if err := json.Unmarshal([]byte(chatMessageReq.AVdata), &avData); err != nil {
 					zlog.Error(err.Error())
 				}
-				if chatMessageReq.Type == message_type_enum.Text {
+				message := model.Message{
+					Uuid:       fmt.Sprintf("M%s", random.GetNowAndLenRandomString(11)),
+					SessionId:  chatMessageReq.SessionId,
+					Type:       chatMessageReq.Type,
+					Content:    "",
+					Url:        "",
+					SendId:     chatMessageReq.SendId,
+					SendName:   chatMessageReq.SendName,
+					SendAvatar: chatMessageReq.SendAvatar,
+					ReceiveId:  chatMessageReq.ReceiveId,
+					FileSize:   "",
+					FileType:   "",
+					FileName:   "",
+					Status:     message_status_enum.Unsent,
+					CreatedAt:  time.Now(),
+					AVdata:     chatMessageReq.AVdata,
+				}
+				if avData.MessageId == "PROXY" && (avData.Type == "start_call" || avData.Type == "receive_call" || avData.Type == "reject_call") {
 					// 存message
-					message := model.Message{
-						Uuid:       fmt.Sprintf("M%s", random.GetNowAndLenRandomString(11)),
-						SessionId:  chatMessageReq.SessionId,
-						Type:       chatMessageReq.Type,
-						Content:    chatMessageReq.Content,
-						Url:        "",
-						SendId:     chatMessageReq.SendId,
-						SendName:   chatMessageReq.SendName,
-						SendAvatar: chatMessageReq.SendAvatar,
-						ReceiveId:  chatMessageReq.ReceiveId,
-						FileSize:   "0B",
-						FileType:   "",
-						FileName:   "",
-						Status:     message_status_enum.Unsent,
-						CreatedAt:  time.Now(),
-						AVdata:     "",
-					}
 					// 对SendAvatar去除前面/static之前的所有内容，防止ip前缀引入
 					message.SendAvatar = normalizePath(message.SendAvatar)
+					// Kafka 模式：携带消费幂等键，由 kafka_key 唯一索引兜底防重放重复落库
+					if data.KafkaKey != "" {
+						kk := data.KafkaKey
+						message.KafkaKey = &kk
+					}
 					duplicate, err := persistMessage(&message)
 					if err != nil {
 						zlog.Error(err.Error())
+						// Kafka 模式（8m 节）：落库失败登记重试，不丢。
+						if s.KafkaRetry != nil && data.KafkaMsg != nil {
+							s.KafkaRetry(*data.KafkaMsg)
+						}
 						return
 					}
 					if duplicate {
-						return // 重复投递（如 Kafka 重复消费），已处理过，跳过
-					}
-					if message.ReceiveId[0] == 'U' { // 发送给User
-						// 如果能找到ReceiveId，说明在线，可以发送，否则存表后跳过
-						// 因为在线的时候是通过websocket更新消息记录的，离线后通过存表，登录时只调用一次数据库操作
-						// 切换chat对象后，前端的messageList也会改变，获取messageList从第二次就是从redis中获取
-						messageRsp := respond.GetMessageListRespond{
-							SendId:     message.SendId,
-							SendName:   message.SendName,
-							SendAvatar: chatMessageReq.SendAvatar,
-							ReceiveId:  message.ReceiveId,
-							Type:       message.Type,
-							Content:    message.Content,
-							Url:        message.Url,
-							FileSize:   message.FileSize,
-							FileName:   message.FileName,
-							FileType:   message.FileType,
-							CreatedAt:  message.CreatedAt.Format("2006-01-02 15:04:05"),
+						if s.KafkaCommit != nil && data.KafkaMsg != nil {
+							s.KafkaCommit(*data.KafkaMsg)
 						}
-						jsonMessage, err := json.Marshal(messageRsp)
-						if err != nil {
-							zlog.Error(err.Error())
-						}
-						var messageBack = &MessageBack{
-							Message: jsonMessage,
-							Uuid:    message.Uuid,
-						}
-						s.mutex.Lock()
-						if receiveClient, ok := s.Clients[message.ReceiveId]; ok {
-							s.push(receiveClient, messageBack)
-						}
-						// 因为send_id肯定在线，所以这里在后端进行在线回显message，其实优化的话前端可以直接回显
-						// 问题在于前后端的req和rsp结构不同，前端存储message的messageList不能存req，只能存rsp
-						// 所以这里后端进行回显，前端不回显
-						if sendClient := s.Clients[message.SendId]; sendClient != nil {
-							s.push(sendClient, messageBack)
-						}
-						s.mutex.Unlock()
-
-						// Cache-Aside：写路径只做失效删除（读 miss 时回源重建），
-						// 不再逐条读改写（RMW）。删除双向 key，避免对方缓存脏读。
-						if err := myredis.DelKeys("message_list_"+message.SendId+"_"+message.ReceiveId, "message_list_"+message.ReceiveId+"_"+message.SendId); err != nil {
-							zlog.Error(err.Error())
-						}
-
-					} else if message.ReceiveId[0] == 'G' { // 发送给Group
-						if time.Since(msgStart) > 50*time.Millisecond {
-							zlog.Warn("dispatch slow (group) after persist", zap.Duration("elapsed", time.Since(msgStart)))
-						}
-						messageRsp := respond.GetGroupMessageListRespond{
-							SendId:     message.SendId,
-							SendName:   message.SendName,
-							SendAvatar: chatMessageReq.SendAvatar,
-							ReceiveId:  message.ReceiveId,
-							Type:       message.Type,
-							Content:    message.Content,
-							Url:        message.Url,
-							FileSize:   message.FileSize,
-							FileName:   message.FileName,
-							FileType:   message.FileType,
-							CreatedAt:  message.CreatedAt.Format("2006-01-02 15:04:05"),
-						}
-						jsonMessage, err := json.Marshal(messageRsp)
-						if err != nil {
-							zlog.Error(err.Error())
-						}
-						var messageBack = &MessageBack{
-							Message: jsonMessage,
-							Uuid:    message.Uuid,
-						}
-						var group model.GroupInfo
-						if res := dao.GormDB.Where("uuid = ?", message.ReceiveId).First(&group); res.Error != nil {
-							zlog.Error(res.Error.Error())
-						}
-						var members []string
-						if err := json.Unmarshal(group.Members, &members); err != nil {
-							zlog.Error(err.Error())
-						}
-						s.mutex.Lock()
-						for _, member := range members {
-							if member != message.SendId {
-								if receiveClient, ok := s.Clients[member]; ok {
-									s.push(receiveClient, messageBack)
-								}
-							} else {
-								if sendClient := s.Clients[message.SendId]; sendClient != nil {
-									s.push(sendClient, messageBack)
-								}
-							}
-						}
-						s.mutex.Unlock()
-
-						// Cache-Aside：写路径只做失效删除
-						if err := myredis.DelKeys("group_messagelist_" + message.ReceiveId); err != nil {
-							zlog.Error(err.Error())
-						}
-					}
-				} else if chatMessageReq.Type == message_type_enum.File {
-					// 存message
-					message := model.Message{
-						Uuid:       fmt.Sprintf("M%s", random.GetNowAndLenRandomString(11)),
-						SessionId:  chatMessageReq.SessionId,
-						Type:       chatMessageReq.Type,
-						Content:    "",
-						Url:        chatMessageReq.Url,
-						SendId:     chatMessageReq.SendId,
-						SendName:   chatMessageReq.SendName,
-						SendAvatar: chatMessageReq.SendAvatar,
-						ReceiveId:  chatMessageReq.ReceiveId,
-						FileSize:   chatMessageReq.FileSize,
-						FileType:   chatMessageReq.FileType,
-						FileName:   chatMessageReq.FileName,
-						Status:     message_status_enum.Unsent,
-						CreatedAt:  time.Now(),
-						AVdata:     "",
-					}
-					// 对SendAvatar去除前面/static之前的所有内容，防止ip前缀引入
-					message.SendAvatar = normalizePath(message.SendAvatar)
-					duplicate, err := persistMessage(&message)
-					if err != nil {
-						zlog.Error(err.Error())
 						return
 					}
-					if duplicate {
-						return
+					// 落库成功（或已存在）：置幂等键 done，重放时跳过
+					if data.KafkaKey != "" {
+						markDoneKey(data.KafkaKey)
 					}
-					if message.ReceiveId[0] == 'U' { // 发送给User
-						messageRsp := respond.GetMessageListRespond{
-							SendId:     message.SendId,
-							SendName:   message.SendName,
-							SendAvatar: chatMessageReq.SendAvatar,
-							ReceiveId:  message.ReceiveId,
-							Type:       message.Type,
-							Content:    message.Content,
-							Url:        message.Url,
-							FileSize:   message.FileSize,
-							FileName:   message.FileName,
-							FileType:   message.FileType,
-							CreatedAt:  message.CreatedAt.Format("2006-01-02 15:04:05"),
-						}
-						jsonMessage, err := json.Marshal(messageRsp)
-						if err != nil {
-							zlog.Error(err.Error())
-						}
-						var messageBack = &MessageBack{
-							Message: jsonMessage,
-							Uuid:    message.Uuid,
-						}
-						s.mutex.Lock()
-						if receiveClient, ok := s.Clients[message.ReceiveId]; ok {
-							s.push(receiveClient, messageBack)
-						}
-						if sendClient := s.Clients[message.SendId]; sendClient != nil {
-							s.push(sendClient, messageBack)
-						}
-						s.mutex.Unlock()
-
-						// Cache-Aside：写路径只做失效删除（读 miss 时回源重建），
-						// 不再逐条读改写（RMW）。删除双向 key，避免对方缓存脏读。
-						if err := myredis.DelKeys("message_list_"+message.SendId+"_"+message.ReceiveId, "message_list_"+message.ReceiveId+"_"+message.SendId); err != nil {
-							zlog.Error(err.Error())
-						}
-					} else {
-						messageRsp := respond.GetGroupMessageListRespond{
-							SendId:     message.SendId,
-							SendName:   message.SendName,
-							SendAvatar: chatMessageReq.SendAvatar,
-							ReceiveId:  message.ReceiveId,
-							Type:       message.Type,
-							Content:    message.Content,
-							Url:        message.Url,
-							FileSize:   message.FileSize,
-							FileName:   message.FileName,
-							FileType:   message.FileType,
-							CreatedAt:  message.CreatedAt.Format("2006-01-02 15:04:05"),
-						}
-						jsonMessage, err := json.Marshal(messageRsp)
-						if err != nil {
-							zlog.Error(err.Error())
-						}
-						var messageBack = &MessageBack{
-							Message: jsonMessage,
-							Uuid:    message.Uuid,
-						}
-						var group model.GroupInfo
-						if res := dao.GormDB.Where("uuid = ?", message.ReceiveId).First(&group); res.Error != nil {
-							zlog.Error(res.Error.Error())
-						}
-						var members []string
-						if err := json.Unmarshal(group.Members, &members); err != nil {
-							zlog.Error(err.Error())
-						}
-						s.mutex.Lock()
-						for _, member := range members {
-							if member != message.SendId {
-								if receiveClient, ok := s.Clients[member]; ok {
-									s.push(receiveClient, messageBack)
-								}
-							} else {
-								if sendClient := s.Clients[message.SendId]; sendClient != nil {
-									s.push(sendClient, messageBack)
-								}
-							}
-						}
-						s.mutex.Unlock()
-
-						// Cache-Aside：写路径只做失效删除
-						if err := myredis.DelKeys("group_messagelist_" + message.ReceiveId); err != nil {
-							zlog.Error(err.Error())
-						}
+					// 8m 节：落库成功才提交 offset。
+					if s.KafkaCommit != nil && data.KafkaMsg != nil {
+						s.KafkaCommit(*data.KafkaMsg)
 					}
-				} else if chatMessageReq.Type == message_type_enum.AudioOrVideo {
-					var avData request.AVData
-					if err := json.Unmarshal([]byte(chatMessageReq.AVdata), &avData); err != nil {
-						zlog.Error(err.Error())
-					}
-					message := model.Message{
-						Uuid:       fmt.Sprintf("M%s", random.GetNowAndLenRandomString(11)),
-						SessionId:  chatMessageReq.SessionId,
-						Type:       chatMessageReq.Type,
-						Content:    "",
-						Url:        "",
-						SendId:     chatMessageReq.SendId,
-						SendName:   chatMessageReq.SendName,
-						SendAvatar: chatMessageReq.SendAvatar,
-						ReceiveId:  chatMessageReq.ReceiveId,
-						FileSize:   "",
-						FileType:   "",
-						FileName:   "",
-						Status:     message_status_enum.Unsent,
-						CreatedAt:  time.Now(),
-						AVdata:     chatMessageReq.AVdata,
-					}
-					if avData.MessageId == "PROXY" && (avData.Type == "start_call" || avData.Type == "receive_call" || avData.Type == "reject_call") {
-						// 存message
-						// 对SendAvatar去除前面/static之前的所有内容，防止ip前缀引入
-						message.SendAvatar = normalizePath(message.SendAvatar)
-						duplicate, err := persistMessage(&message)
-						if err != nil {
-							zlog.Error(err.Error())
-							return
-						}
-						_ = duplicate
-					}
-
-					if chatMessageReq.ReceiveId[0] == 'U' { // 发送给User
-						// 通话信令不落库回显（避免出现两个 start_call），仅转发给接收方
-						messageRsp := respond.AVMessageRespond{
-							SendId:     message.SendId,
-							SendName:   message.SendName,
-							SendAvatar: message.SendAvatar,
-							ReceiveId:  message.ReceiveId,
-							Type:       message.Type,
-							Content:    message.Content,
-							Url:        message.Url,
-							FileSize:   message.FileSize,
-							FileName:   message.FileName,
-							FileType:   message.FileType,
-							CreatedAt:  message.CreatedAt.Format("2006-01-02 15:04:05"),
-							AVdata:     message.AVdata,
-						}
-						jsonMessage, err := json.Marshal(messageRsp)
-						if err != nil {
-							zlog.Error(err.Error())
-						}
-						var messageBack = &MessageBack{
-							Message: jsonMessage,
-							Uuid:    message.Uuid,
-						}
-						s.mutex.Lock()
-						if receiveClient, ok := s.Clients[message.ReceiveId]; ok {
-							s.push(receiveClient, messageBack)
-						}
-						// 通话这不能回显，发回去的话就会出现两个start_call。
-						//sendClient := s.Clients[message.SendId]
-						//sendClient.SendBack <- messageBack
-						s.mutex.Unlock()
-					}
+					_ = duplicate
 				}
 
+				if chatMessageReq.ReceiveId[0] == 'U' { // 发送给User
+					// 通话信令不落库回显（避免出现两个 start_call），仅转发给接收方
+					messageRsp := respond.AVMessageRespond{
+						SendId:     message.SendId,
+						SendName:   message.SendName,
+						SendAvatar: message.SendAvatar,
+						ReceiveId:  message.ReceiveId,
+						Type:       message.Type,
+						Content:    message.Content,
+						Url:        message.Url,
+						FileSize:   message.FileSize,
+						FileName:   message.FileName,
+						FileType:   message.FileType,
+						CreatedAt:  message.CreatedAt.Format("2006-01-02 15:04:05"),
+						AVdata:     message.AVdata,
+					}
+					jsonMessage, err := json.Marshal(messageRsp)
+					if err != nil {
+						zlog.Error(err.Error())
+					}
+					var messageBack = &MessageBack{
+						Message: jsonMessage,
+						Uuid:    message.Uuid,
+					}
+					s.mutex.Lock()
+					if receiveClient, ok := s.Clients[message.ReceiveId]; ok {
+						s.push(receiveClient, messageBack)
+					}
+					// 通话这不能回显，发回去的话就会出现两个start_call。
+					//sendClient := s.Clients[message.SendId]
+					//sendClient.SendBack <- messageBack
+					s.mutex.Unlock()
+				}
 			}
+
+		}
+	}
+}
+
+// dispatchPersistedText 对一条已落库的文本消息执行推送：单聊（接收方 + 发送方回显）与
+// 群聊（逐成员扇出），并做写路径缓存失效。channel 模式在落库后调用；
+// Kafka 模式经 chat_push 广播消费后调用（msgStart 用于慢分发告警，见 8k 节）。
+func (s *Server) dispatchPersistedText(msgStart time.Time, chatMessageReq *request.ChatMessageRequest, message *model.Message) {
+	if message.ReceiveId[0] == 'U' { // 发送给User
+		messageRsp := respond.GetMessageListRespond{
+			SendId:     message.SendId,
+			SendName:   message.SendName,
+			SendAvatar: chatMessageReq.SendAvatar,
+			ReceiveId:  message.ReceiveId,
+			Type:       message.Type,
+			Content:    message.Content,
+			Url:        message.Url,
+			FileSize:   message.FileSize,
+			FileName:   message.FileName,
+			FileType:   message.FileType,
+			CreatedAt:  message.CreatedAt.Format("2006-01-02 15:04:05"),
+		}
+		jsonMessage, err := json.Marshal(messageRsp)
+		if err != nil {
+			zlog.Error(err.Error())
+		}
+		var messageBack = &MessageBack{
+			Message: jsonMessage,
+			Uuid:    message.Uuid,
+		}
+		s.mutex.Lock()
+		if receiveClient, ok := s.Clients[message.ReceiveId]; ok {
+			s.push(receiveClient, messageBack)
+		}
+		// 因为send_id肯定在线，所以这里在后端进行在线回显message，其实优化的话前端可以直接回显
+		// 问题在于前后端的req和rsp结构不同，前端存储message的messageList不能存req，只能存rsp
+		// 所以这里后端进行回显，前端不回显
+		if sendClient := s.Clients[message.SendId]; sendClient != nil {
+			s.push(sendClient, messageBack)
+		}
+		s.mutex.Unlock()
+
+		// Cache-Aside：写路径只做失效删除（读 miss 时回源重建），
+		// 不再逐条读改写（RMW）。删除双向 key，避免对方缓存脏读。
+		invalidateUserMessageList(message.SendId, message.ReceiveId)
+
+	} else if message.ReceiveId[0] == 'G' { // 发送给Group
+		if time.Since(msgStart) > 50*time.Millisecond {
+			zlog.Warn("dispatch slow (group) after persist", zap.Duration("elapsed", time.Since(msgStart)))
+		}
+		messageRsp := respond.GetGroupMessageListRespond{
+			SendId:     message.SendId,
+			SendName:   message.SendName,
+			SendAvatar: chatMessageReq.SendAvatar,
+			ReceiveId:  message.ReceiveId,
+			Type:       message.Type,
+			Content:    message.Content,
+			Url:        message.Url,
+			FileSize:   message.FileSize,
+			FileName:   message.FileName,
+			FileType:   message.FileType,
+			CreatedAt:  message.CreatedAt.Format("2006-01-02 15:04:05"),
+		}
+		jsonMessage, err := json.Marshal(messageRsp)
+		if err != nil {
+			zlog.Error(err.Error())
+		}
+		var messageBack = &MessageBack{
+			Message: jsonMessage,
+			Uuid:    message.Uuid,
+		}
+		var members []string
+		// 8n 节：群成员缓存——每事件一次 MySQL 查询实测 5-25ms（1000 事件
+		// 分发 10s+，超压测 10s 排空窗口）；群成员变更低频，TTL 30s 内
+		// 成员列表的短暂陈旧可接受（多推/漏推窗口 ≤30s，历史拉取兜底）。
+		members = cachedGroupMembers(message.ReceiveId)
+		s.mutex.Lock()
+		for _, member := range members {
+			if member != message.SendId {
+				if receiveClient, ok := s.Clients[member]; ok {
+					s.push(receiveClient, messageBack)
+				}
+			} else {
+				if sendClient := s.Clients[message.SendId]; sendClient != nil {
+					s.push(sendClient, messageBack)
+				}
+			}
+		}
+		s.mutex.Unlock()
+
+		// Cache-Aside：写路径只做失效删除。8n 节：失效删除异步化——同步
+		// Redis DEL 实测 ~1-4ms/事件（压测负载下更慢），群扇出被钳制在
+		// ~100/s，1000 事件在压测 10s 排空窗口内分发不完（送达率 81-98%
+		// 抖动）。缓存是读路径加速（TTL 兜底），异步失效不破坏正确性。
+		invalidateGroupMessageList(message.ReceiveId)
 	}
 }
 
@@ -434,6 +542,145 @@ func persistMessage(message *model.Message) (bool, error) {
 	return false, nil
 }
 
+// cachedGroupMembers 返回群成员 uuid 列表，带 30s TTL 缓存（8n 节）。// 群分发逐事件 MySQL 查询实测 5-25ms/次，1000 事件分发 10s+，超过压测
+// 排空窗口；群成员变更低频，TTL 内成员列表短暂陈旧可接受（新成员 ≤30s
+// 后才收到群推送，历史拉取兜底；被移除成员 ≤30s 内仍可能收到，语义无害）。
+// 同 gid 并发回源用互斥锁防击穿。
+type cachedGroupMembersEntry struct {
+	members []string
+	expire  time.Time
+}
+
+var (
+	groupMembersCache   sync.Map // gid -> cachedGroupMembersEntry
+	groupMembersCacheMu sync.Mutex
+	// groupListInvalidateCh 群消息列表缓存失效异步队列（8n 节）：见
+	// invalidateGroupMessageList——把 Redis DEL 从群扇出路径挪到独立
+	// goroutine，失效删除与推送分发解耦；worker 攒批管道化删除。
+	groupListInvalidateCh = make(chan string, 2048)
+	// userListInvalidateCh 单聊消息列表缓存失效异步队列（8n 复测）：见
+	// invalidateUserMessageList。机器负载下 Redis RTT 实测 ~0.5→2ms，
+	// 同步 DelKeys 串在 push 消费关键路径上把消费速率从 ~1800 钳制到
+	// ~600 事件/s（CHAT 端到端 P50 94ms → 秒级、回显丢半）；与群分支
+	// 同样异步化 + worker 攒批管道化删除后分发路径不再依赖 Redis 往返。
+	userListInvalidateCh = make(chan string, 4096)
+)
+
+func init() {
+	go func() {
+		// 群消息列表失效 worker：攒批 + 管道化删除。逐 key 串行 DEL 被
+		// Redis RTT 钳制（机器负载下 ~2ms/次 → ~500 删除/s），跟不上
+		// 1000 事件/s 的生产速率，队列满后 dispatch 退化同步删除，
+		// 群扇出被重新钳制（8n 复测同源问题，与单聊分支一并修复）。
+		batch := make([]string, 0, 128)
+		for gid := range groupListInvalidateCh {
+			batch = append(batch, "group_messagelist_"+gid)
+		collectG:
+			for len(batch) < 128 {
+				select {
+				case g := <-groupListInvalidateCh:
+					batch = append(batch, "group_messagelist_"+g)
+				default:
+					break collectG
+				}
+			}
+			if err := myredis.DelKeysPipelined(batch); err != nil {
+				zlog.Error(err.Error())
+			}
+			batch = batch[:0]
+		}
+	}()
+	go func() {
+		// 单聊消息列表失效 worker：攒批 + 管道化删除（DelKeysPipelined
+		// 一次往返删整批）。逐 key 串行 DEL 上限 ~500 删除/s，跟不上
+		// 1000 msg/s × 2 key 的生产速率，队列满后 dispatch 退化同步
+		// 删除、push 消费被重新钳制（实测 dispAvg 1.5-2ms → 消费 ~600
+		// 事件/s → CHAT 端到端 P50 秒级、回显丢半）。
+		batch := make([]string, 0, 128)
+		for key := range userListInvalidateCh {
+			batch = append(batch, key)
+		collectU:
+			for len(batch) < 128 {
+				select {
+				case k := <-userListInvalidateCh:
+					batch = append(batch, k)
+				default:
+					break collectU
+				}
+			}
+			if err := myredis.DelKeysPipelined(batch); err != nil {
+				zlog.Error(err.Error())
+			}
+			batch = batch[:0]
+		}
+	}()
+}
+
+// invalidateUserMessageList 异步失效单聊消息列表缓存（双向 key，避免
+// 对方缓存脏读）：队列满时退化为同步删除（极端积压保底；TTL 兜底最坏
+// 情况也仅是多读一次 DB）。
+func invalidateUserMessageList(sendId, receiveId string) {
+	key1 := "message_list_" + sendId + "_" + receiveId
+	key2 := "message_list_" + receiveId + "_" + sendId
+	select {
+	case userListInvalidateCh <- key1:
+	default:
+		if err := myredis.DelKeys(key1, key2); err != nil {
+			zlog.Error(err.Error())
+		}
+		return
+	}
+	select {
+	case userListInvalidateCh <- key2:
+	default:
+		// key1 已入队（worker 可能已删）；双向再删一次幂等无害。
+		if err := myredis.DelKeys(key1, key2); err != nil {
+			zlog.Error(err.Error())
+		}
+	}
+}
+
+// invalidateGroupMessageList 异步失效群消息列表缓存：队列满时退化为同步
+// 删除（极端积压保底；TTL 兜底最坏情况也仅是多读一次 DB）。
+func invalidateGroupMessageList(gid string) {
+	select {
+	case groupListInvalidateCh <- gid:
+	default:
+		if err := myredis.DelKeys("group_messagelist_" + gid); err != nil {
+			zlog.Error(err.Error())
+		}
+	}
+}
+
+func cachedGroupMembers(gid string) []string {
+	if v, ok := groupMembersCache.Load(gid); ok {
+		e := v.(cachedGroupMembersEntry)
+		if time.Now().Before(e.expire) {
+			return e.members
+		}
+	}
+	groupMembersCacheMu.Lock()
+	defer groupMembersCacheMu.Unlock()
+	if v, ok := groupMembersCache.Load(gid); ok {
+		e := v.(cachedGroupMembersEntry)
+		if time.Now().Before(e.expire) {
+			return e.members
+		}
+	}
+	var group model.GroupInfo
+	if res := dao.GormDB.Where("uuid = ?", gid).First(&group); res.Error != nil {
+		zlog.Error(res.Error.Error())
+		return nil
+	}
+	var members []string
+	if err := json.Unmarshal(group.Members, &members); err != nil {
+		zlog.Error(err.Error())
+		return nil
+	}
+	groupMembersCache.Store(gid, cachedGroupMembersEntry{members: members, expire: time.Now().Add(30 * time.Second)})
+	return members
+}
+
 // push 非阻塞下行推送：
 //   - SendBack 有空位 → 正常写入并清零丢弃计数；
 //   - SendBack 已满 → 丢弃本次推送（消息保持 Unsent），dropCount++；
@@ -441,6 +688,12 @@ func persistMessage(message *model.Message) (bool, error) {
 //
 // 分发循环永不因单个慢客户端阻塞（见 docs/design/messaging.md）。
 func (s *Server) push(client *Client, back *MessageBack) {
+	// 8m 节：回收方已置 closed（SendBack 将关/已关）的连接不再投递——
+	// select 向已关闭 channel 发送会 panic；此前 panic 发生在持锁期间
+	// 导致分发循环死锁（见 Client.closed 注释与压测报告 8m 节）。
+	if client.closed.Load() {
+		return
+	}
 	select {
 	case client.SendBack <- back:
 		client.dropCount = 0
@@ -476,8 +729,11 @@ func (s *Server) SendClientToLogout(client *Client) {
 	s.Logout <- client
 }
 
-func (s *Server) SendMessageToTransmit(message []byte) {
-	s.Transmit <- message
+// SendMessageToTransmit 把一条上行消息投递到分发循环。Kafka 模式 Transmit
+// 路径携带原 Kafka 消息（km 非 nil，8m 节：落库成功才提交 offset）；
+// channel 模式 km 为 nil。
+func (s *Server) SendMessageToTransmit(message []byte, kafkaKey string, km *kafka.Message) {
+	s.Transmit <- &TransmitData{Data: message, KafkaKey: kafkaKey, KafkaMsg: km}
 }
 
 func (s *Server) RemoveClient(uuid string) {

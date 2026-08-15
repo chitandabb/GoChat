@@ -69,13 +69,17 @@ type LogConfig struct {
 }
 
 type KafkaConfig struct {
-	MessageMode string        `toml:"messageMode"`
-	HostPort    string        `toml:"hostPort"`
-	LoginTopic  string        `toml:"loginTopic"`
-	LogoutTopic string        `toml:"logoutTopic"`
-	ChatTopic   string        `toml:"chatTopic"`
-	Partition   int           `toml:"partition"`
-	Timeout     time.Duration `toml:"timeout"`
+	MessageMode string `toml:"messageMode"`
+	HostPort    string `toml:"hostPort"`
+	LoginTopic  string `toml:"loginTopic"`
+	LogoutTopic string `toml:"logoutTopic"`
+	ChatTopic   string `toml:"chatTopic"`
+	// PushTopic 是推送事件广播 topic（8k 节）：消息落库后写回该 topic，
+	// 每个实例用独立消费组消费全量推送事件、查本地 Clients map 推送，
+	// 打通跨实例推送（消费侧多实例分摊分区时，推送不再只在本实例生效）。
+	PushTopic string        `toml:"pushTopic"`
+	Partition int           `toml:"partition"`
+	Timeout   time.Duration `toml:"timeout"`
 	// RequiredAcks 控制生产端确认级别：none / one / all。
 	// none 吞吐最高但可能丢消息；one 是可靠性与吞吐的默认折中；all 最强一致。
 	RequiredAcks string `toml:"requiredAcks"`
@@ -449,6 +453,9 @@ func (cfg *Config) normalize() {
 	}
 	if cfg.KafkaConfig.ChatTopic == "" {
 		cfg.KafkaConfig.ChatTopic = "chat_message"
+	}
+	if cfg.KafkaConfig.PushTopic == "" {
+		cfg.KafkaConfig.PushTopic = "chat_push"
 	}
 	if cfg.KafkaConfig.Timeout == 0 {
 		cfg.KafkaConfig.Timeout = 1
