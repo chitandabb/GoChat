@@ -49,6 +49,27 @@ services:
     environment:
       APP_ENV: docker
       TZ: Asia/Shanghai
+      # 阿里云短信配置通过 .env 注入（GOCHAT_SMS_*），容器内若为空则走开发模式
+      # （验证码写 Redis + 服务端日志打印），保证未配置时 demo 也能走通注册/短信登录。
+      GOCHAT_SMS_ACCESS_KEY_ID: ${GOCHAT_SMS_ACCESS_KEY_ID:-}
+      GOCHAT_SMS_ACCESS_KEY_SECRET: ${GOCHAT_SMS_ACCESS_KEY_SECRET:-}
+      GOCHAT_SMS_SIGN_NAME: ${GOCHAT_SMS_SIGN_NAME:-}
+      GOCHAT_SMS_TEMPLATE_CODE: ${GOCHAT_SMS_TEMPLATE_CODE:-}
+      GOCHAT_SMS_SCHEME_NAME: ${GOCHAT_SMS_SCHEME_NAME:-}
+      GOCHAT_SMS_COUNTRY_CODE: ${GOCHAT_SMS_COUNTRY_CODE:-86}
+      GOCHAT_SMS_CODE_LENGTH: ${GOCHAT_SMS_CODE_LENGTH:-6}
+      GOCHAT_SMS_VALID_TIME: ${GOCHAT_SMS_VALID_TIME:-300}
+      GOCHAT_SMS_DUPLICATE_POLICY: ${GOCHAT_SMS_DUPLICATE_POLICY:-1}
+      GOCHAT_SMS_INTERVAL: ${GOCHAT_SMS_INTERVAL:-60}
+      GOCHAT_SMS_CODE_TYPE: ${GOCHAT_SMS_CODE_TYPE:-1}
+      GOCHAT_SMS_CASE_AUTH_POLICY: ${GOCHAT_SMS_CASE_AUTH_POLICY:-1}
+      GOCHAT_SMS_RETURN_VERIFY_CODE: ${GOCHAT_SMS_RETURN_VERIFY_CODE:-false}
+      GOCHAT_SMS_AUTO_RETRY: ${GOCHAT_SMS_AUTO_RETRY:-1}
+      # 演示默认开发模式验证码（即使 AK 已配置也走本地验证码，日志打印）；
+      # 需要真实短信时在 .env 置 GOCHAT_SMS_DEV_MODE=false 并配置 AK。
+      GOCHAT_SMS_DEV_MODE: ${GOCHAT_SMS_DEV_MODE:-true}
+      # JWT 密钥：生产必须通过 GOCHAT_JWT_SECRET 注入强密钥
+      GOCHAT_JWT_SECRET: ${GOCHAT_JWT_SECRET:-}
     depends_on:
       mysql:
         condition: service_healthy
@@ -61,7 +82,9 @@ services:
       - ${GOCHAT_BACKEND_AVATARS:-gochat_backend-avatars}:/app/static/avatars
       - ${GOCHAT_BACKEND_FILES:-gochat_backend-files}:/app/static/files
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8000/wss | grep -q 'clientId获取失败'"]
+      # busybox wget 对 401 不写文件且返回非零，不能用作健康判据；
+      # 直接探测 8000 端口（TCP 可达即说明 HTTP 网关在监听）
+      test: ["CMD-SHELL", "nc -z localhost 8000"]
       interval: 10s
       timeout: 5s
       retries: 15
@@ -71,9 +94,13 @@ services:
     build:
       context: ./web/chat-server
       dockerfile: Dockerfile
+      # 不注入 API/WS 地址：由前端按页面 hostname 自动推导（store/index.js），
+      # 这样局域网/手机通过 http://<服务器IP>:8080 访问时，API/WS 也会指向
+      # 同一 IP 的 8000 端口，而不是写死 localhost。
+      # 需要定制时显式设置 FRONTEND_API_BASE_URL / FRONTEND_WS_BASE_URL。
       args:
-        VUE_APP_API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://localhost:8000}
-        VUE_APP_WS_BASE_URL: ${FRONTEND_WS_BASE_URL:-ws://localhost:8000}
+        VUE_APP_API_BASE_URL: ${FRONTEND_API_BASE_URL:-}
+        VUE_APP_WS_BASE_URL: ${FRONTEND_WS_BASE_URL:-}
     container_name: gochat-frontend
     depends_on:
       backend:
