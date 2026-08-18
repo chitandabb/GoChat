@@ -104,7 +104,8 @@ type Client struct {
 	Uuid      string
 	SendTo    chan []byte       // 给 server 端（上行积压缓冲，Flush goroutine 转发）
 	SendBack  chan *MessageBack // 给前端（下行）
-	dropCount int               // 连续丢弃计数，仅分发循环（单 goroutine）读写
+	dropCount int               // 连续丢弃计数
+	dropMu    sync.Mutex        // Kafka 推送循环与 Server 分发循环可能并发调用 push
 	readDone  chan struct{}
 	writeDone chan struct{}
 	flushDone chan struct{}
@@ -132,10 +133,16 @@ var upgrader = websocket.Upgrader{
 }
 
 // originAllowed 判断 Origin 是否在白名单内。
+// 默认允许任意 host 的 http(s)://*:8080（前端 dev server 默认端口），
+// 同时兼容显式配置的 WSAllowedOrigins / GOCHAT_CORS_ORIGINS 列表。
 func originAllowed(origin string) bool {
 	parsed, err := url.Parse(origin)
 	if err != nil {
 		return false
+	}
+	// 开发环境：任意 host 的 8080 端口前端（localhost / 127.0.0.1 / 局域网 IP 均可）。
+	if isDevFrontendOrigin(parsed) {
+		return true
 	}
 	allowed := config.GetConfig().ServerConfig.WSAllowedOrigins
 	if len(allowed) == 0 {
@@ -147,6 +154,16 @@ func originAllowed(origin string) bool {
 		}
 	}
 	return false
+}
+
+// isDevFrontendOrigin 判断是否为前端开发服务器来源（http/https + 端口 8080）。
+// 与 https_server 的 CORS 白名单规则保持一致。
+func isDevFrontendOrigin(parsed *url.URL) bool {
+	port := parsed.Port()
+	if port == "" {
+		return false
+	}
+	return port == "8080" && (parsed.Scheme == "http" || parsed.Scheme == "https")
 }
 
 var messageMode = config.GetConfig().KafkaConfig.MessageMode
@@ -326,13 +343,18 @@ func NewClientInit(c *gin.Context, clientId string) {
 // 只摘除在线表并关闭连接，channel 由回收 goroutine 统一关闭（消除关闭竞态）。
 func ClientLogout(clientId string) (string, int) {
 	kafkaConfig := config.GetConfig().KafkaConfig
-	client := ChatServer.Clients[clientId]
+	server := ChatServer
+	if kafkaConfig.MessageMode != "channel" {
+		server = KafkaChatServer.server
+	}
+	var client *Client
+	func() {
+		server.mutex.Lock()
+		defer server.mutex.Unlock()
+		client = server.Clients[clientId]
+	}()
 	if client != nil {
-		if kafkaConfig.MessageMode == "channel" {
-			ChatServer.SendClientToLogout(client)
-		} else {
-			KafkaChatServer.SendClientToLogout(client)
-		}
+		server.SendClientToLogout(client)
 		if err := client.Conn.Close(); err != nil {
 			zlog.Error(err.Error())
 			return constants.SYSTEM_ERROR, -1

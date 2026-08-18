@@ -28,8 +28,8 @@ type Server struct {
 	// 模式为 nil，走原"本地直推"路径。
 	KafkaCommit func(msg kafka.Message)
 	KafkaRetry  func(msg kafka.Message)
-	Clients map[string]*Client
-	mutex   *sync.Mutex
+	Clients     map[string]*Client
+	mutex       *sync.Mutex
 	// Transmit 携带待分发的上行消息：channel 模式由客户端 Flush 直接投递；
 	// Kafka 模式由 kafka_server 消费 chat topic 后转入（8k 节）。
 	Transmit chan *TransmitData // 转发通道
@@ -80,6 +80,7 @@ func normalizePath(path string) string {
 	staticIndex := strings.Index(path, "/static/")
 	if staticIndex < 0 {
 		zlog.Error("路径不合法: " + path)
+		return path
 	}
 	// 返回从 "/static/" 开始的部分
 	return path[staticIndex:]
@@ -111,33 +112,30 @@ func (s *Server) dispatchOnce() {
 	select {
 	case client := <-s.Login:
 		{
-			s.mutex.Lock()
-			s.Clients[client.Uuid] = client
-			s.mutex.Unlock()
-			zlog.Debug(fmt.Sprintf("欢迎来到GoChat聊天服务器，亲爱的用户%s\n", client.Uuid))
-			// 8m 节修复：欢迎消息非阻塞投递（原为阻塞发送）——连接若在登录排队
-			// 期间断开，Write goroutine 已退出、SendBack 无人消费，阻塞发送会
-			// 把分发循环永久卡死（实测 299 个登录堆积）。投递失败视为连接已死，
-			// 走 Logout 回收。closed 检查防"已关闭 channel 发送 panic"。
-			if !client.closed.Load() {
-				select {
-				case client.SendBack <- &MessageBack{Message: []byte("欢迎来到GoChat聊天服务器")}:
-				default:
-					zlog.Warn("欢迎消息投递失败，连接已不可用", zap.String("uuid", client.Uuid))
-					select {
-					case s.Logout <- client:
-					default:
-					}
-					client.closeConn()
-				}
+			if client == nil {
+				return
 			}
+			func() {
+				s.mutex.Lock()
+				defer s.mutex.Unlock()
+				s.Clients[client.Uuid] = client
+			}()
+			zlog.Debug(fmt.Sprintf("欢迎来到GoChat聊天服务器，亲爱的用户%s\n", client.Uuid))
+			// 欢迎帧也走 push 的恢复保护，避免 closed 检查与 close(SendBack)
+			// 之间的竞态触发 panic。
+			s.push(client, &MessageBack{Message: []byte("欢迎来到GoChat聊天服务器")})
 		}
 
 	case client := <-s.Logout:
 		{
-			s.mutex.Lock()
-			delete(s.Clients, client.Uuid)
-			s.mutex.Unlock()
+			if client == nil {
+				return
+			}
+			func() {
+				s.mutex.Lock()
+				defer s.mutex.Unlock()
+				delete(s.Clients, client.Uuid)
+			}()
 			zlog.Info(fmt.Sprintf("用户%s退出登录\n", client.Uuid))
 			// 关闭连接触发 Read/Write goroutine 退出，回收路径统一清理 channel 并记录离线时间
 			client.closeConn()
@@ -146,10 +144,24 @@ func (s *Server) dispatchOnce() {
 
 	case data := <-s.Transmit:
 		{
+			if data == nil {
+				return
+			}
 			msgStart := time.Now()
 			var chatMessageReq request.ChatMessageRequest
 			if err := json.Unmarshal(data.Data, &chatMessageReq); err != nil {
 				zlog.Error(err.Error())
+				if s.KafkaCommit != nil && data.KafkaMsg != nil {
+					s.KafkaCommit(*data.KafkaMsg)
+				}
+				return
+			}
+			if chatMessageReq.ReceiveId == "" {
+				zlog.Warn("消息缺少 receive_id，跳过并提交")
+				if s.KafkaCommit != nil && data.KafkaMsg != nil {
+					s.KafkaCommit(*data.KafkaMsg)
+				}
+				return
 			}
 			if chatMessageReq.Type == message_type_enum.Text {
 				// 存message
@@ -282,14 +294,9 @@ func (s *Server) dispatchOnce() {
 						Message: jsonMessage,
 						Uuid:    message.Uuid,
 					}
-					s.mutex.Lock()
-					if receiveClient, ok := s.Clients[message.ReceiveId]; ok {
-						s.push(receiveClient, messageBack)
+					for _, client := range s.clientsByUUID(message.ReceiveId, message.SendId) {
+						s.push(client, messageBack)
 					}
-					if sendClient := s.Clients[message.SendId]; sendClient != nil {
-						s.push(sendClient, messageBack)
-					}
-					s.mutex.Unlock()
 
 					// Cache-Aside：写路径只做失效删除（读 miss 时回源重建），
 					// 不再逐条读改写（RMW）。删除双向 key，避免对方缓存脏读。
@@ -319,19 +326,9 @@ func (s *Server) dispatchOnce() {
 					// 8n 节：群成员缓存（见 cachedGroupMembers）——逐事件 MySQL
 					// 查询实测 5-25ms/次，1000 事件分发超压测排空窗口。
 					members := cachedGroupMembers(message.ReceiveId)
-					s.mutex.Lock()
-					for _, member := range members {
-						if member != message.SendId {
-							if receiveClient, ok := s.Clients[member]; ok {
-								s.push(receiveClient, messageBack)
-							}
-						} else {
-							if sendClient := s.Clients[message.SendId]; sendClient != nil {
-								s.push(sendClient, messageBack)
-							}
-						}
+					for _, client := range s.clientsByUUID(members...) {
+						s.push(client, messageBack)
 					}
-					s.mutex.Unlock()
 
 					// Cache-Aside：写路径只做失效删除
 					if err := myredis.DelKeys("group_messagelist_" + message.ReceiveId); err != nil {
@@ -393,6 +390,10 @@ func (s *Server) dispatchOnce() {
 						s.KafkaCommit(*data.KafkaMsg)
 					}
 					_ = duplicate
+				} else if s.KafkaCommit != nil && data.KafkaMsg != nil {
+					// SDP/candidate 等不满足持久化条件的信令只转发，明确
+					// 跳过落库并完成 Kafka 记账，避免 in-flight 永久冻结。
+					s.KafkaCommit(*data.KafkaMsg)
 				}
 
 				if chatMessageReq.ReceiveId[0] == 'U' { // 发送给User
@@ -419,14 +420,17 @@ func (s *Server) dispatchOnce() {
 						Message: jsonMessage,
 						Uuid:    message.Uuid,
 					}
-					s.mutex.Lock()
-					if receiveClient, ok := s.Clients[message.ReceiveId]; ok {
-						s.push(receiveClient, messageBack)
+					for _, client := range s.clientsByUUID(message.ReceiveId) {
+						s.push(client, messageBack)
 					}
 					// 通话这不能回显，发回去的话就会出现两个start_call。
 					//sendClient := s.Clients[message.SendId]
 					//sendClient.SendBack <- messageBack
-					s.mutex.Unlock()
+				}
+			} else {
+				zlog.Warn("未知消息类型，跳过并提交", zap.Int8("type", chatMessageReq.Type))
+				if s.KafkaCommit != nil && data.KafkaMsg != nil {
+					s.KafkaCommit(*data.KafkaMsg)
 				}
 			}
 
@@ -438,6 +442,10 @@ func (s *Server) dispatchOnce() {
 // 群聊（逐成员扇出），并做写路径缓存失效。channel 模式在落库后调用；
 // Kafka 模式经 chat_push 广播消费后调用（msgStart 用于慢分发告警，见 8k 节）。
 func (s *Server) dispatchPersistedText(msgStart time.Time, chatMessageReq *request.ChatMessageRequest, message *model.Message) {
+	if chatMessageReq == nil || message == nil || message.ReceiveId == "" {
+		zlog.Warn("持久化消息缺少推送必要字段，跳过")
+		return
+	}
 	if message.ReceiveId[0] == 'U' { // 发送给User
 		messageRsp := respond.GetMessageListRespond{
 			SendId:     message.SendId,
@@ -460,17 +468,9 @@ func (s *Server) dispatchPersistedText(msgStart time.Time, chatMessageReq *reque
 			Message: jsonMessage,
 			Uuid:    message.Uuid,
 		}
-		s.mutex.Lock()
-		if receiveClient, ok := s.Clients[message.ReceiveId]; ok {
-			s.push(receiveClient, messageBack)
+		for _, client := range s.clientsByUUID(message.ReceiveId, message.SendId) {
+			s.push(client, messageBack)
 		}
-		// 因为send_id肯定在线，所以这里在后端进行在线回显message，其实优化的话前端可以直接回显
-		// 问题在于前后端的req和rsp结构不同，前端存储message的messageList不能存req，只能存rsp
-		// 所以这里后端进行回显，前端不回显
-		if sendClient := s.Clients[message.SendId]; sendClient != nil {
-			s.push(sendClient, messageBack)
-		}
-		s.mutex.Unlock()
 
 		// Cache-Aside：写路径只做失效删除（读 miss 时回源重建），
 		// 不再逐条读改写（RMW）。删除双向 key，避免对方缓存脏读。
@@ -506,19 +506,9 @@ func (s *Server) dispatchPersistedText(msgStart time.Time, chatMessageReq *reque
 		// 分发 10s+，超压测 10s 排空窗口）；群成员变更低频，TTL 30s 内
 		// 成员列表的短暂陈旧可接受（多推/漏推窗口 ≤30s，历史拉取兜底）。
 		members = cachedGroupMembers(message.ReceiveId)
-		s.mutex.Lock()
-		for _, member := range members {
-			if member != message.SendId {
-				if receiveClient, ok := s.Clients[member]; ok {
-					s.push(receiveClient, messageBack)
-				}
-			} else {
-				if sendClient := s.Clients[message.SendId]; sendClient != nil {
-					s.push(sendClient, messageBack)
-				}
-			}
+		for _, client := range s.clientsByUUID(members...) {
+			s.push(client, messageBack)
 		}
-		s.mutex.Unlock()
 
 		// Cache-Aside：写路径只做失效删除。8n 节：失效删除异步化——同步
 		// Redis DEL 实测 ~1-4ms/事件（压测负载下更慢），群扇出被钳制在
@@ -526,6 +516,20 @@ func (s *Server) dispatchPersistedText(msgStart time.Time, chatMessageReq *reque
 		// 抖动）。缓存是读路径加速（TTL 兜底），异步失效不破坏正确性。
 		invalidateGroupMessageList(message.ReceiveId)
 	}
+}
+
+// clientsByUUID 只在锁内读取在线表，返回快照后由调用方在锁外执行推送。
+// 推送可能触发连接关闭或其他可恢复逻辑，不能把这些调用放在 Clients 锁内。
+func (s *Server) clientsByUUID(uuids ...string) []*Client {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	clients := make([]*Client, 0, len(uuids))
+	for _, uuid := range uuids {
+		if client, ok := s.Clients[uuid]; ok && client != nil {
+			clients = append(clients, client)
+		}
+	}
+	return clients
 }
 
 // persistMessage 落库消息；返回 duplicate=true 表示 uuid 唯一键冲突（重复投递，已处理过）。
@@ -545,7 +549,7 @@ func persistMessage(message *model.Message) (bool, error) {
 // cachedGroupMembers 返回群成员 uuid 列表，带 30s TTL 缓存（8n 节）。// 群分发逐事件 MySQL 查询实测 5-25ms/次，1000 事件分发 10s+，超过压测
 // 排空窗口；群成员变更低频，TTL 内成员列表短暂陈旧可接受（新成员 ≤30s
 // 后才收到群推送，历史拉取兜底；被移除成员 ≤30s 内仍可能收到，语义无害）。
-// 同 gid 并发回源用互斥锁防击穿。
+// 互斥锁只保护缓存检查与写入，不把数据库回源放在锁内。
 type cachedGroupMembersEntry struct {
 	members []string
 	expire  time.Time
@@ -659,14 +663,18 @@ func cachedGroupMembers(gid string) []string {
 			return e.members
 		}
 	}
+	// 只保护缓存检查与写入，数据库查询必须在锁外执行，避免慢 IO
+	// 阻塞其他群消息的缓存访问。
 	groupMembersCacheMu.Lock()
-	defer groupMembersCacheMu.Unlock()
 	if v, ok := groupMembersCache.Load(gid); ok {
 		e := v.(cachedGroupMembersEntry)
 		if time.Now().Before(e.expire) {
+			groupMembersCacheMu.Unlock()
 			return e.members
 		}
 	}
+	groupMembersCacheMu.Unlock()
+
 	var group model.GroupInfo
 	if res := dao.GormDB.Where("uuid = ?", gid).First(&group); res.Error != nil {
 		zlog.Error(res.Error.Error())
@@ -677,7 +685,17 @@ func cachedGroupMembers(gid string) []string {
 		zlog.Error(err.Error())
 		return nil
 	}
+
+	groupMembersCacheMu.Lock()
+	if v, ok := groupMembersCache.Load(gid); ok {
+		e := v.(cachedGroupMembersEntry)
+		if time.Now().Before(e.expire) {
+			groupMembersCacheMu.Unlock()
+			return e.members
+		}
+	}
 	groupMembersCache.Store(gid, cachedGroupMembersEntry{members: members, expire: time.Now().Add(30 * time.Second)})
+	groupMembersCacheMu.Unlock()
 	return members
 }
 
@@ -688,12 +706,22 @@ func cachedGroupMembers(gid string) []string {
 //
 // 分发循环永不因单个慢客户端阻塞（见 docs/design/messaging.md）。
 func (s *Server) push(client *Client, back *MessageBack) {
-	// 8m 节：回收方已置 closed（SendBack 将关/已关）的连接不再投递——
-	// select 向已关闭 channel 发送会 panic；此前 panic 发生在持锁期间
-	// 导致分发循环死锁（见 Client.closed 注释与压测报告 8m 节）。
-	if client.closed.Load() {
+	// closed 检查与 close(SendBack) 之间仍可能发生竞态，因此 select
+	// 必须由 recover 兜底；panic 只能被视为本次发送失败，不能逃出分发循环。
+	uuid := ""
+	if client != nil {
+		uuid = client.Uuid
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			zlog.Error("下行推送失败（连接已关闭）", zap.String("uuid", uuid), zap.Any("panic", r))
+		}
+	}()
+	if client == nil || back == nil || client.closed.Load() {
 		return
 	}
+	client.dropMu.Lock()
+	defer client.dropMu.Unlock()
 	select {
 	case client.SendBack <- back:
 		client.dropCount = 0
@@ -738,24 +766,30 @@ func (s *Server) SendMessageToTransmit(message []byte, kafkaKey string, km *kafk
 
 func (s *Server) RemoveClient(uuid string) {
 	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	delete(s.Clients, uuid)
-	s.mutex.Unlock()
 }
 
 // KickOut 主动断开指定用户的连接（管理员禁用 / 全量登出）。
 // 只关闭 TCP 连接，不操作 channel；连接回收仍走既有登出路径。
 func KickOut(uuid string) {
-	ChatServer.mutex.Lock()
-	client, ok := ChatServer.Clients[uuid]
-	ChatServer.mutex.Unlock()
-	if ok && client != nil {
+	var client *Client
+	func() {
+		ChatServer.mutex.Lock()
+		defer ChatServer.mutex.Unlock()
+		client = ChatServer.Clients[uuid]
+	}()
+	if client != nil {
 		zlog.Info("主动断开用户连接", zap.String("uuid", uuid))
 		_ = client.Conn.Close()
 	}
-	KafkaChatServer.server.mutex.Lock()
-	kafkaClient, kafkaOk := KafkaChatServer.server.Clients[uuid]
-	KafkaChatServer.server.mutex.Unlock()
-	if kafkaOk && kafkaClient != nil {
+	var kafkaClient *Client
+	func() {
+		KafkaChatServer.server.mutex.Lock()
+		defer KafkaChatServer.server.mutex.Unlock()
+		kafkaClient = KafkaChatServer.server.Clients[uuid]
+	}()
+	if kafkaClient != nil {
 		zlog.Info("主动断开用户连接(kafka)", zap.String("uuid", uuid))
 		_ = kafkaClient.Conn.Close()
 	}

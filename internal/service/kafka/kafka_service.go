@@ -55,7 +55,8 @@ func (k *kafkaService) KafkaInit() {
 		MaxWait: 100 * time.Millisecond,
 	})
 	// 推送事件广播：writer 与 chat 相同参数；reader 用独立 GroupID
-	// （进程唯一）保证广播语义——每个实例都消费全量推送事件。
+	// （hostname + pid 唯一）保证广播语义——每个实例都消费全量推送事件，
+	// 不会因容器内 PID 都是 1 而加入同一消费组分摊分区。
 	k.PushWriter = &kafka.Writer{
 		Addr:         kafka.TCP(kafkaConfig.HostPort),
 		Topic:        kafkaConfig.PushTopic,
@@ -66,12 +67,14 @@ func (k *kafkaService) KafkaInit() {
 		BatchSize:    10,
 		BatchTimeout: 10 * time.Millisecond,
 	}
+	hostname, _ := os.Hostname()
 	k.PushReader = kafka.NewReader(kafka.ReaderConfig{
 		Brokers:        []string{kafkaConfig.HostPort},
 		Topic:          kafkaConfig.PushTopic,
 		CommitInterval: kafkaConfig.Timeout * time.Second,
-		// 广播语义：每个实例独立消费组（进程唯一后缀），互不干扰。
-		GroupID:     fmt.Sprintf("chat_push_%d", os.Getpid()),
+		// 广播语义：每个实例独立消费组。hostname 区分容器/主机，pid
+		// 区分同机多进程；组合后即使容器内 PID 都是 1 也不会互相分摊分区。
+		GroupID:     fmt.Sprintf("chat_push_%s-%d", hostname, os.Getpid()),
 		StartOffset: kafka.FirstOffset,
 		MaxWait:     100 * time.Millisecond,
 	})

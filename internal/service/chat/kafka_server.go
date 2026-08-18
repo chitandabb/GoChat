@@ -57,6 +57,10 @@ type KafkaServer struct {
 	// offset 由连续水位保护，不会越过它提交。
 	retryMu    sync.Mutex
 	retryQueue []kafka.Message
+
+	// commitFn / markDoneFn 仅供单元测试替换外部依赖。
+	commitFn   func([]kafka.Message) error
+	markDoneFn func(string)
 }
 
 var KafkaChatServer *KafkaServer
@@ -356,8 +360,14 @@ func (k *KafkaServer) consumeLoop() {
 			// 洪峰不再存在。
 			// 文件 / 音视频信令保持原 Transmit 路径。
 			var req request.ChatMessageRequest
-			if err := json.Unmarshal(kafkaMessage.Value, &req); err == nil &&
-				req.Type == message_type_enum.Text {
+			if err := json.Unmarshal(kafkaMessage.Value, &req); err != nil {
+				// 消息已认领但永远无法解析：明确跳过并提交，不能留下
+				// in-flight 水位或进入既不落库也不重试的 Transmit 路径。
+				zlog.Error(fmt.Sprintf("kafka message unmarshal: %v", err))
+				k.skipClaimedMessage(kafkaMessage, "JSON 解析失败")
+				continue
+			}
+			if req.Type == message_type_enum.Text {
 				batch = append(batch, kafkaMessage)
 				if len(batch) >= persistBatchSize {
 					flush()
@@ -365,7 +375,7 @@ func (k *KafkaServer) consumeLoop() {
 			} else {
 				// 8m 节：不再在这里提交 offset——落库发生在分发循环（server.go
 				// dispatchOnce），落库成功由 KafkaCommit 回调提交，失败由
-				// KafkaRetry 回调登记重试。"先落库、后提交"覆盖全部消息类型。
+				// KafkaRetry 回调登记重试。"先落库、后提交"覆盖全部合法非文本类型。
 				k.server.SendMessageToTransmit(kafkaMessage.Value, dedupKey(kafkaMessage), &kafkaMessage)
 			}
 		}
@@ -550,6 +560,13 @@ func (k *KafkaServer) persistBatch(msgs []kafka.Message) []kafka.Message {
 		var req request.ChatMessageRequest
 		if err := json.Unmarshal(km.Value, &req); err != nil {
 			zlog.Error(fmt.Sprintf("kafka batch unmarshal: %v", err))
+			k.skipClaimedMessage(km, "批量 JSON 解析失败")
+			continue
+		}
+		if req.Type != message_type_enum.Text {
+			// persistBatch 只接收文本；非文本必须由 Transmit 路径明确处理，
+			// 防止误入后既不落库也不提交。
+			k.skipClaimedMessage(km, fmt.Sprintf("非文本类型 %d 不进入文本批量", req.Type))
 			continue
 		}
 		m := buildTextMessage(&req)
@@ -574,6 +591,12 @@ func (k *KafkaServer) persistBatch(msgs []kafka.Message) []kafka.Message {
 		for _, km := range msgs {
 			var req request.ChatMessageRequest
 			if err := json.Unmarshal(km.Value, &req); err != nil {
+				zlog.Error(fmt.Sprintf("kafka fallback unmarshal: %v", err))
+				k.skipClaimedMessage(km, "逐条回退 JSON 解析失败")
+				continue
+			}
+			if req.Type != message_type_enum.Text {
+				k.skipClaimedMessage(km, fmt.Sprintf("逐条回退遇到非文本类型 %d", req.Type))
 				continue
 			}
 			m := buildTextMessage(&req)
@@ -602,18 +625,42 @@ func (k *KafkaServer) persistBatch(msgs []kafka.Message) []kafka.Message {
 		// 8n 节：逐条 SETEX 是批量路径吞吐瓶颈之一）；
 		// 若含重试消息则解除 in-flight 记账（8l 节）。
 		doneKeys := make([]string, 0, len(pairs))
+		completed := make([]kafka.Message, 0, len(pairs))
 		for _, p := range pairs {
 			k.clearInFlight(p.km)
 			doneKeys = append(doneKeys, "kafka_dedup:"+dedupKey(p.km))
+			completed = append(completed, p.km)
 		}
 		markDoneKeys(doneKeys)
-		k.commitSafe(msgs)
+		k.commitSafe(completed)
 	}
 
 	for _, p := range pairs {
 		publishPush(&PersistedText{Req: p.req, Msg: p.msg})
 	}
 	return failed
+}
+
+// skipClaimedMessage 明确跳过一条已认领但不应继续处理的消息：先解除
+// in-flight，再走连续水位提交。坏 JSON、未知消息类型等永久失败输入必须走
+// 这条路径，不能 continue 后留下冻结水位。
+func (k *KafkaServer) skipClaimedMessage(km kafka.Message, reason string) {
+	zlog.Warn("Kafka 消息跳过并提交", zap.String("reason", reason),
+		zap.String("topic", km.Topic), zap.Int("partition", km.Partition),
+		zap.Int64("offset", km.Offset))
+	// 跳过也属于完成：置 done 可避免提交失败后重放再次进入 pending，
+	// 从而避免永久坏输入形成重复处理日志。
+	k.markSkippedDone(dedupKey(km))
+	k.clearInFlight(km)
+	k.commitSafe([]kafka.Message{km})
+}
+
+func (k *KafkaServer) markSkippedDone(key string) {
+	if k.markDoneFn != nil {
+		k.markDoneFn(key)
+		return
+	}
+	markDoneKey(key)
 }
 
 // registerInFlight 登记一条已认领、正在处理（含失败重试）的消息：该分区
@@ -694,7 +741,13 @@ func (k *KafkaServer) commitPending() {
 // doCommit 实际提交各分区的 offset（取传入消息的最大 offset，分区级单调）。
 func (k *KafkaServer) doCommit(byPart map[int][]kafka.Message) {
 	for _, partMsgs := range byPart {
-		if err := mykafka.KafkaService.ChatReader.CommitMessages(context.Background(), partMsgs...); err != nil {
+		var err error
+		if k.commitFn != nil {
+			err = k.commitFn(partMsgs)
+		} else {
+			err = mykafka.KafkaService.ChatReader.CommitMessages(context.Background(), partMsgs...)
+		}
+		if err != nil {
 			zlog.Error("提交 offset 失败: " + err.Error())
 		}
 	}

@@ -18,7 +18,7 @@ import (
 // 已写入连接即视为 Sent（语义不变），落库交给后台 worker 批量 UPDATE。
 
 const (
-	statusBatchSize  = 64             // 单批最多累积条数
+	statusBatchSize  = 64                     // 单批最多累积条数
 	statusFlushEvery = 100 * time.Millisecond // 最长刷盘间隔
 )
 
