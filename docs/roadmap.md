@@ -23,7 +23,7 @@
 - [ ] main 显式依赖装配，去除包级单例 `init()` 链（推迟，见 `delivery-plan.md` 裁剪说明）。
 - [ ] golang-migrate 迁移链（当前为 AutoMigrate + 启动期数据修复，见 `delivery-plan.md` 裁剪说明）。
 
-## M1:鉴权与账号安全【简历亮点 1：双 Token 认证与连接安全】
+## M1:鉴权与账号安全【核心能力 1：双 Token 认证与连接安全】
 
 - [x] bcrypt 密码哈希 + 存量明文登录懒升级（数据库已无明文，见 `internal/service/gorm/user_info_service.go`）。
 - [x] JWT 双 Token：15min Access + 7d Refresh（Redis 白名单）+ 续期旋转 + 重放检测全量撤销（单测 + HTTP 实测）。
@@ -33,7 +33,7 @@
 - [x] 在线状态：登录写 `last_online_at`、断连写 `last_offline_at`。
 - [x] 登录失败按手机号分钟级限流；管理员禁用用户 → 撤销 Refresh + 断开在线连接（实测）。
 
-## M2:消息管道与性能【简历亮点 2、3：长连接治理与可靠投递】
+## M2:消息管道与性能【核心能力 2、3：长连接治理与可靠投递】
 
 - [x] 投递语义落地：先落库后推送；下行非阻塞推送 + 连续丢弃计数 + 慢客户端断开（0.3–0.5s 实测）。
 - [x] 心跳：Ping/Pong + 读超时清理半开连接；连接回收权唯一（消除关闭竞态）。
@@ -44,7 +44,7 @@
 - [x] Kafka 模式调优：生产者 BatchTimeout 10ms / 消费者 MaxWait 100ms / broker fetch.max.wait 50ms，P99 45.6ms。
 - [x] 自研 Go 压测客户端 `bench/` 入仓 + 四场景压测报告（1k–3k 连接 / P99<50ms / 群风暴 100% / 慢客户端）。
 
-## M2:缓存验证【简历亮点 4：Redis 缓存优化】
+## M2:缓存验证【核心能力 4：Redis 缓存优化】
 
 - [x] 消息列表缓存改 Cache-Aside（写路径失效删除，不再读改写；修复单向 key 脏读）。
 - [x] 全仓 `KEYS` 替换为 `SCAN`（`redis_service.go`）；TTL ±20% 随机抖动防雪崩。
