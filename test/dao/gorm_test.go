@@ -16,7 +16,7 @@ func TestCreate(t *testing.T) {
 
 	userInfo := &model.UserInfo{
 		Uuid:      "U" + strconv.Itoa(random.GetRandomInt(11)),
-		Nickname:  "apylee",
+		Nickname:  "testuser",
 		Telephone: "1390000" + strconv.Itoa(random.GetRandomInt(4)), // 手机号唯一索引，用随机号避免撞库
 		Email:     "1212312312@qq.com",
 		Password:  "123456",

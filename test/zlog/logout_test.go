@@ -7,5 +7,5 @@ import (
 )
 
 func TestInfo(t *testing.T) {
-	zlog.Info("this is a info", zap.String("name", "apylee"))
+	zlog.Info("this is a info", zap.String("name", "testuser"))
 }
