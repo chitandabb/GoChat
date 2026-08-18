@@ -50,7 +50,12 @@
         </el-form-item>
       </el-form>
 
-      <el-button type="primary" class="auth-submit-btn auth-submit-btn--lift" @click="handleLogin">
+      <el-button
+        type="primary"
+        class="auth-submit-btn auth-submit-btn--lift"
+        :loading="loginLoading"
+        @click="handleLogin"
+      >
         登录
       </el-button>
 
@@ -69,13 +74,14 @@
 </template>
 
 <script setup>
-import { reactive } from "vue";
+import { reactive, ref } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { useStore } from "vuex";
 import AuthShell from "@/components/AuthShell.vue";
 import { connectSocket } from "@/utils/ws";
+import { errorMsg } from "@/utils/error";
 
 const loginData = reactive({
   telephone: "",
@@ -84,8 +90,12 @@ const loginData = reactive({
 
 const router = useRouter();
 const store = useStore();
+const loginLoading = ref(false);
 
 const handleLogin = async () => {
+  if (loginLoading.value) {
+    return;
+  }
   try {
     if (!loginData.telephone || !loginData.password) {
       ElMessage.error("请填写完整登录信息。");
@@ -95,6 +105,7 @@ const handleLogin = async () => {
       ElMessage.error("请输入有效的手机号码。");
       return;
     }
+    loginLoading.value = true;
     console.log(store.state.backendUrl, store.state.wsUrl);
     const response = await axios.post(
       store.state.apiUrl + "/auth/login",
@@ -124,7 +135,9 @@ const handleLogin = async () => {
       ElMessage.error(response.data.message);
     }
   } catch (error) {
-    ElMessage.error(error);
+    ElMessage.error(errorMsg(error, "登录失败，请稍后重试"));
+  } finally {
+    loginLoading.value = false;
   }
 };
 

@@ -12,6 +12,12 @@
               </div>
             </div>
             <div class="chat-title-right">
+              <span
+                v-if="store.state.connectionState !== 'connected'"
+                class="conn-state-pill"
+              >
+                ● {{ store.state.connectionState === "reconnecting" ? "连接断开，重连中…" : "未连接" }}
+              </span>
               <span class="chat-status-pill">{{ chatStatusText }}</span>
               <Modal :isVisible="isUserContactInfoModalVisible">
                 <template v-slot:header>
@@ -264,6 +270,7 @@
                             ref="uploadAvatarRef"
                             :auto-upload="false"
                             :action="uploadAvatarPath"
+                            :headers="uploadHeaders"
                             :on-success="handleAvatarUploadSuccess"
                             :before-upload="beforeAvatarUpload"
                           >
@@ -450,6 +457,10 @@
                   :key="index"
                   class="message-item"
                 >
+                  <!-- 历史里的通话信令渲染为一条通话记录 -->
+                  <div v-if="messageItem.type == 3" class="message-call-log">
+                    {{ callLogText(messageItem) }}
+                  </div>
                   <div
                     v-if="
                       messageItem.send_id != userInfo.uuid &&
@@ -499,7 +510,7 @@
                         </div>
                       </div>
 
-                      <div class="left-message-file-container">
+                      <div class="left-message-file-container" v-if="!isMediaMessage(messageItem)">
                         <div style="display: flex; flex-direction: row">
                           <div class="left-message-file-name">
                             {{ messageItem.file_name }}
@@ -514,6 +525,37 @@
                             class="soft-action-btn"
                             size="small"
                             style="margin-top: 20px"
+                            @click="downloadFile(messageItem.file_name)"
+                          >
+                            下载
+                          </el-button>
+                        </div>
+                      </div>
+                      <div class="left-message-media" v-else>
+                        <el-image
+                          v-if="isImage(messageItem)"
+                          :src="messageItem.url"
+                          :preview-src-list="[messageItem.url]"
+                          fit="cover"
+                          class="message-image"
+                        />
+                        <video
+                          v-else-if="isVideo(messageItem)"
+                          :src="messageItem.url"
+                          controls
+                          class="message-video"
+                        ></video>
+                        <audio
+                          v-else-if="isAudio(messageItem)"
+                          :src="messageItem.url"
+                          controls
+                          class="message-audio"
+                        ></audio>
+                        <div class="left-message-media-meta">
+                          {{ messageItem.file_name }} · {{ messageItem.file_size }}
+                          <el-button
+                            class="soft-action-btn"
+                            size="small"
                             @click="downloadFile(messageItem.file_name)"
                           >
                             下载
@@ -574,7 +616,10 @@
                           </div>
                         </div>
                         <div class="message-self-content">
-                          <div class="right-message-file-container">
+                          <div
+                            class="right-message-file-container"
+                            v-if="!isMediaMessage(messageItem)"
+                          >
                             <div style="display: flex; flex-direction: row">
                               <div class="right-message-file-name">
                                 {{ messageItem.file_name }}
@@ -588,6 +633,30 @@
                               已发送
                             </div>
                           </div>
+                          <div class="right-message-media" v-else>
+                            <el-image
+                              v-if="isImage(messageItem)"
+                              :src="messageItem.url"
+                              :preview-src-list="[messageItem.url]"
+                              fit="cover"
+                              class="message-image"
+                            />
+                            <video
+                              v-else-if="isVideo(messageItem)"
+                              :src="messageItem.url"
+                              controls
+                              class="message-video"
+                            ></video>
+                            <audio
+                              v-else-if="isAudio(messageItem)"
+                              :src="messageItem.url"
+                              controls
+                              class="message-audio"
+                            ></audio>
+                            <div class="right-message-media-meta">
+                              {{ messageItem.file_name }} · {{ messageItem.file_size }}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -597,38 +666,6 @@
       </el-scrollbar>
       <div class="tool-bar">
               <div class="tool-bar-left">
-                <el-tooltip
-                  effect="customized"
-                  content="表情包"
-                  placement="top"
-                  hide-after="0"
-                  enterable="false"
-                >
-                  <button
-                    class="image-button"
-                    @click="
-                      downloadFile(backendUrl + '/static/avatars', '头像.jpg')
-                    "
-                  >
-                    <svg
-                      t="1733502796507"
-                      class="sticker-icon"
-                      viewBox="0 0 1024 1024"
-                      version="1.1"
-                      xmlns="http://www.w3.org/2000/svg"
-                      p-id="1555"
-                      width="128"
-                      height="128"
-                    >
-                      <path
-                        d="M504.32 31.872a472.256 472.256 0 1 1 0 944.512 472.256 472.256 0 0 1 0-944.512z m0 63.36a408.96 408.96 0 1 0 0 817.856 408.96 408.96 0 0 0 0-817.92z m228.864 487.808v0.192a217.856 217.856 0 1 1-435.712 0V583.04h435.712zM370.496 321.536a73.024 73.024 0 1 1 0 146.048 73.024 73.024 0 0 1 0-146.048z m289.664 0a73.024 73.024 0 1 1 0 146.048 73.024 73.024 0 0 1 0-146.048z"
-                        fill="#2c2c2c"
-                        p-id="1556"
-                      ></path>
-                    </svg>
-                  </button>
-                </el-tooltip>
-
                 <el-tooltip
                   effect="customized"
                   content="文件上传"
@@ -643,6 +680,7 @@
                       :auto-upload="true"
                       :show-file-list="false"
                       :action="uploadPath"
+                      :headers="uploadHeaders"
                       :on-success="handleUploadSuccess"
                       :before-upload="beforeFileUpload"
                       style="
@@ -678,45 +716,12 @@
 
                 <el-tooltip
                   effect="customized"
-                  content="聊天记录"
-                  placement="top"
-                  hide-after="0"
-                  enterable="false"
-                >
-                  <button class="image-button">
-                    <svg
-                      t="1733504061769"
-                      class="record-icon"
-                      viewBox="0 0 1024 1024"
-                      version="1.1"
-                      xmlns="http://www.w3.org/2000/svg"
-                      p-id="5492"
-                      width="128"
-                      height="128"
-                    >
-                      <path
-                        d="M695.04 194.32H98.08c-18.32 0-33.16-14.85-33.16-33.16 0-18.32 14.85-33.16 33.16-33.16h596.96c18.32 0 33.16 14.85 33.16 33.16 0 18.31-14.84 33.16-33.16 33.16zM298.97 393.3H96.19c-17.27 0-31.27-14-31.27-31.27v-3.79c0-17.27 14-31.27 31.27-31.27h202.78c17.27 0 31.27 14 31.27 31.27v3.79c-0.01 17.28-14.01 31.27-31.27 31.27zM230.74 592.29H98.08c-18.32 0-33.16-14.85-33.16-33.16 0-18.32 14.85-33.16 33.16-33.16h132.66c18.32 0 33.16 14.85 33.16 33.16 0.01 18.31-14.84 33.16-33.16 33.16zM230.74 791.28H98.08c-18.32 0-33.16-14.85-33.16-33.16 0-18.32 14.85-33.16 33.16-33.16h132.66c18.32 0 33.16 14.85 33.16 33.16 0.01 18.31-14.84 33.16-33.16 33.16zM728.2 691.78H595.55c-18.32 0-33.16-14.85-33.16-33.16 0-18.32 14.85-33.16 33.16-33.16H728.2c18.32 0 33.16 14.85 33.16 33.16 0.01 18.31-14.84 33.16-33.16 33.16z"
-                        p-id="5493"
-                      ></path>
-                      <path
-                        d="M562.38 658.62V525.96c0-18.32 14.85-33.16 33.16-33.16 18.32 0 33.16 14.85 33.16 33.16v132.66c0 18.32-14.85 33.16-33.16 33.16-18.31 0-33.16-14.85-33.16-33.16z"
-                        p-id="5494"
-                      ></path>
-                      <path
-                        d="M960.35 625.45c0 183.16-148.48 331.64-331.64 331.64S297.07 808.62 297.07 625.45s148.48-331.64 331.64-331.64 331.64 148.48 331.64 331.64zM628.71 360.14c-146.53 0-265.31 118.79-265.31 265.31s118.79 265.31 265.31 265.31 265.31-118.79 265.31-265.31-118.78-265.31-265.31-265.31z"
-                        p-id="5495"
-                      ></path>
-                    </svg>
-                  </button>
-                </el-tooltip>
-                <el-tooltip
-                  effect="customized"
                   content="全文复制"
                   placement="top"
                   hide-after="0"
                   enterable="false"
                 >
-                  <button class="image-button">
+                  <button class="image-button" @click="copyAllMessages">
                     <svg
                       t="1733503137487"
                       class="copy-icon"
@@ -744,7 +749,11 @@
                   hide-after="0"
                   enterable="false"
                 >
-                  <button class="image-button" @click="showAVContainerModal">
+                  <button
+                    v-if="contactInfo.contact_id[0] === 'U'"
+                    class="image-button"
+                    @click="startCallRequest"
+                  >
                     <svg
                       t="1733503700535"
                       class="av-icon"
@@ -763,47 +772,6 @@
                     </svg>
                   </button>
                 </el-tooltip>
-                <div
-                  class="video-modal-overlay"
-                  v-show="isAVContainerModalVisible"
-                >
-                  <div class="video-modal-content">
-                    <div class="video-modal-header">
-                      <h2>聊天室</h2>
-                    </div>
-                    <div class="video-modal-body">
-                      <video autoplay playsinline class="local-video"></video>
-                      <video autoplay playsinline class="remote-video"></video>
-                    </div>
-                    <div class="video-modal-footer">
-                      <el-button
-                        class="video-modal-footer-btn"
-                        @click="startCall(true)"
-                        >发起通话</el-button
-                      >
-                      <el-button
-                        class="video-modal-footer-btn"
-                        @click="startCall(false)"
-                        >接收通话</el-button
-                      >
-                      <el-button
-                        class="video-modal-footer-btn"
-                        @click="rejectCall"
-                        >拒绝通话</el-button
-                      >
-                      <el-button
-                        class="video-modal-footer-btn"
-                        @click="sendEndCall"
-                        >挂断通话</el-button
-                      >
-                      <el-button
-                        class="video-modal-footer-btn"
-                        @click="closeAVContainerModal"
-                        >退出聊天室</el-button
-                      >
-                    </div>
-                  </div>
-                </div>
               </div>
       </div>
     </el-main>
@@ -833,14 +801,16 @@
 </template>
 
 <script>
-  import { computed, reactive, toRefs, onMounted, ref, nextTick } from "vue";
+  import { computed, reactive, toRefs, onMounted, onBeforeUnmount, ref, nextTick } from "vue";
   import { useRouter, onBeforeRouteUpdate } from "vue-router";
   import { useStore } from "vuex";
   import axios from "axios";
   import Modal from "@/components/Modal.vue";
   import SmallModal from "@/components/SmallModal.vue";
-  import { ElMessage, ElMessageBox, ElScrollbar } from "element-plus";
-  import { ElNotification } from "element-plus";
+  import { ElMessage, ElMessageBox } from "element-plus";
+  import { on, emit, sessionKeyOf } from "@/utils/messageBus";
+  import { sendChatMessage } from "@/utils/ws";
+  import { uploadFile } from "@/utils/upload";
 export default {
   name: "ContactChat",
   components: {
@@ -851,17 +821,13 @@ export default {
   setup() {
     const router = useRouter();
     const store = useStore();
+    // 消息滚动容器引用（模板 ref 绑定，见 ref="scrollbarRef" / ref="innerRef"）
+    const scrollbarRef = ref(null);
+    const innerRef = ref(null);
     const data = reactive({
       chatMessage: "",
       chatName: "",
       userInfo: store.state.userInfo,
-      createGroupReq: {
-        owner_id: "",
-        name: "",
-        notice: "",
-        add_mode: null,
-        avatar: "",
-      },
       isUserContactInfoModalVisible: false,
       isGroupContactInfoModalVisible: false,
       isAddGroupModalVisible: false,
@@ -902,8 +868,6 @@ export default {
       },
       sessionId: "",
       messageList: [],
-      innerRef: ref < HTMLDivElement > null,
-      scrollbarRef: null,
       addGroupList: [],
       uploadRef: null,
       uploadPath: store.state.apiUrl + "/message/uploadFile",
@@ -922,18 +886,12 @@ export default {
       groupMemberList: [],
       selectedGroupMembers: [],
       removeGroupMembersList: [],
-      isAVContainerModalVisible: false,
-      videoPlayer: null,
-      rtcPeerConn: null,
-      ICE_CFG: {},
-      localStream: null,
-      remoteStream: null,
-      remoteVideo: null,
-      localVideo: null,
-      curContactList: [],
-      ableToReceiveOrRejectCall: false,
-      ableToStartCall: true,
     });
+
+    // el-upload 不走 axios 拦截器，需要手动带上 Bearer Token（后端上传接口有鉴权）
+    const uploadHeaders = computed(() => ({
+      Authorization: "Bearer " + store.state.accessToken,
+    }));
 
     const isGroupChat = computed(
       () => data.contactInfo.contact_id && data.contactInfo.contact_id[0] === "G"
@@ -959,186 +917,74 @@ export default {
     });
 
     const canSendMessage = computed(() => data.chatMessage.trim().length > 0);
-    //这是/chat/:id 的id改变时会调用
-    onBeforeRouteUpdate(async (to, from, next) => {
-      await getChatContactInfo(to.params.id);
-      await getSessionId(router.currentRoute.value.params.id);
+
+    // 当前会话消息过滤：chat-message 事件由 messageBus 全局分发，
+    // 这里只把属于当前会话的消息追加进列表（其他会话的由侧栏未读处理）。
+    const handleIncomingMessage = (message) => {
+      const sessionKey = sessionKeyOf(message, data.userInfo.uuid);
+      if (!sessionKey || sessionKey !== data.contactInfo.contact_id) {
+        return;
+      }
+      // type=3 通话信令已由 CallOverlay 处理，不进消息列表
+      if (message.type == 3) {
+        return;
+      }
+      data.messageList.push(message);
+      scrollToBottom();
+    };
+
+    // 断线重连成功后的补偿：重拉当前会话全量历史，补齐断线期间可能丢的消息
+    const handleReconnected = () => {
+      if (!data.contactInfo.contact_id) {
+        return;
+      }
+      if (data.contactInfo.contact_id[0] == "U") {
+        getMessageList();
+      } else {
+        getGroupMessageList();
+      }
+    };
+
+    // 会话激活（首次进入 / :id 变化时复用）：拉资料、开会话、拉历史、清未读
+    const activate = async (routeId) => {
+      await getChatContactInfo(routeId);
+      await getSessionId(routeId);
+      store.commit("setCurrentChatId", data.contactInfo.contact_id);
+      store.commit("clearUnread", data.contactInfo.contact_id);
       if (data.contactInfo.contact_id[0] == "U") {
         await getMessageList();
       } else {
         await getGroupMessageList();
       }
-      console.log(data.sessionId);
-      store.state.socket.onmessage = (jsonMessage) => {
-        const message = JSON.parse(jsonMessage.data);
-        if (message.type != 3) {
-          if (
-            // 群聊过来的消息，且当前会话是该群聊
-            (message.receive_id[0] == "G" &&
-              message.receive_id == data.contactInfo.contact_id) ||
-            // 其他用户过来的消息，且当前会话是该用户
-            (message.receive_id[0] == "U" &&
-              message.receive_id == data.userInfo.uuid) ||
-            // 自己发送的消息
-            message.send_id == data.userInfo.uuid
-          ) {
-            console.log("收到消息：", message);
-            if (data.messageList == null) {
-              data.messageList = [];
-            }
-            data.messageList.push(message);
-            scrollToBottom();
-          }
-          // 其他接受的消息都不显示在messageList中，而是通过切换页面或刷新页面getMessageList来获取
-        } else {
-          var messageAVdata = JSON.parse(message.av_data); // 后端message的该字段命名为av_data
-          if (messageAVdata.messageId === "CURRENT_PEERS") {
-            console.log(
-              "获取CURRENT_PEERS当前在线用户列表，curContactList:",
-              messageAVdata.messageData.curContactList
-            );
-            data.curContactList = messageAVdata.messageData.curContactList;
-          } else if (messageAVdata.messageId === "PEER_JOIN") {
-            console.log(
-              "接受到PEER_JOIN消息，contactId:",
-              messageAVdata.messagecontactId
-            );
-            data.curContactList.push(messageAVdata.messagecontactId);
-          } else if (messageAVdata.messageId === "PEER_LEAVE") {
-            console.log("接收到PEER_LEAVE消息：", data.userInfo.uuid);
-            receiveEndCall();
-          } else if (messageAVdata.messageId === "PROXY") {
-            console.log("接收到PROXY消息：", message);
-            if (messageAVdata.type === "start_call") {
-              ElNotification({
-                title: "消息提示",
-                message: `收到一条来自${message.send_name}的通话请求，请及时前往查看`,
-                type: "warning",
-              });
-              data.ableToReceiveOrRejectCall = true;
-              data.ableToStartCall = false;
-            } else if (messageAVdata.type === "receive_call") {
-              createOffer();
-            } else if (messageAVdata.type === "reject_call") {
-              endCall();
-            } else if (messageAVdata.type === "sdp") {
-              if (messageAVdata.messageData.sdp.type === "offer") {
-                handleOfferSdp(messageAVdata.messageData.sdp);
-              } else if (messageAVdata.messageData.sdp.type === "answer") {
-                handleAnswerSdp(messageAVdata.messageData.sdp);
-              } else {
-                console.log("不支持的sdp类型");
-              }
-            } else if (messageAVdata.type === "candidate") {
-              handleCandidate(messageAVdata.messageData.candidate);
-            } else {
-              console.log("不支持的proxy类型");
-            }
-          }
-          console.log("收到消息：", message);
-          if (data.messageList == null) {
-            data.messageList = [];
-          }
-          data.messageList.push(message);
-          scrollToBottom();
-        }
-      };
+      // openSession 可能新建了会话，通知侧栏刷新
+      emit("session-list-changed");
       scrollToBottom();
+    };
+
+    //这是/chat/:id 的id改变时会调用（同组件复用，切换聊天对象）
+    onBeforeRouteUpdate(async (to, from, next) => {
+      try {
+        await activate(to.params.id);
+      } catch (error) {
+        console.error(error);
+      }
       next();
     });
     // 这是刚渲染/chat/:id页面的时候会调用
     onMounted(async () => {
       try {
-        /*  */
-        console.log(router.currentRoute.value.params.id);
-        await getChatContactInfo(router.currentRoute.value.params.id);
-        await getSessionId(router.currentRoute.value.params.id);
-        console.log(data.contactInfo);
-        if (data.contactInfo.contact_id[0] == "U") {
-          await getMessageList();
-        } else {
-          await getGroupMessageList();
-        }
-        console.log(data.sessionId);
-        store.state.socket.onmessage = (jsonMessage) => {
-          const message = JSON.parse(jsonMessage.data);
-          if (message.type != 3) {
-            if (
-              // 群聊过来的消息，且当前会话是该群聊
-              (message.receive_id[0] == "G" &&
-                message.receive_id == data.contactInfo.contact_id) ||
-              // 其他用户过来的消息，且当前会话是该用户
-              (message.receive_id[0] == "U" &&
-                message.receive_id == data.userInfo.uuid) ||
-              // 自己发送的消息
-              message.send_id == data.userInfo.uuid
-            ) {
-              console.log("收到消息：", message);
-              if (data.messageList == null) {
-                data.messageList = [];
-              }
-              data.messageList.push(message);
-              scrollToBottom();
-            }
-            // 其他接受的消息都不显示在messageList中，而是通过切换页面或刷新页面getMessageList来获取
-          } else {
-            var messageAVdata = JSON.parse(message.av_data); // 后端message的该字段命名为av_data
-            if (messageAVdata.messageId === "CURRENT_PEERS") {
-              console.log(
-                "获取CURRENT_PEERS当前在线用户列表，curContactList:",
-                messageAVdata.messageData.curContactList
-              );
-              data.curContactList = messageAVdata.messageData.curContactList;
-            } else if (messageAVdata.messageId === "PEER_JOIN") {
-              console.log(
-                "接受到PEER_JOIN消息，contactId:",
-                messageAVdata.messagecontactId
-              );
-              data.curContactList.push(messageAVdata.messagecontactId);
-            } else if (messageAVdata.messageId === "PEER_LEAVE") {
-              console.log("接收到PEER_LEAVE消息：", data.userInfo.uuid);
-              receiveEndCall();
-            } else if (messageAVdata.messageId === "PROXY") {
-              console.log("接收到PROXY消息：", message);
-              if (messageAVdata.type === "start_call") {
-                ElNotification({
-                  title: "消息提示",
-                  message: `收到一条来自${message.send_name}的通话请求，请及时前往查看`,
-                  type: "warning",
-                });
-                data.ableToReceiveOrRejectCall = true;
-                data.ableToStartCall = false;
-              } else if (messageAVdata.type === "reject_call") {
-                endCall();
-              } else if (messageAVdata.type === "receive_call") {
-                console.log("接收到receive_call消息", data.userInfo.nickname);
-                createOffer();
-              } else if (messageAVdata.type === "sdp") {
-                if (messageAVdata.messageData.sdp.type === "offer") {
-                  handleOfferSdp(messageAVdata.messageData.sdp);
-                } else if (messageAVdata.messageData.sdp.type === "answer") {
-                  handleAnswerSdp(messageAVdata.messageData.sdp);
-                } else {
-                  console.log("不支持的sdp类型");
-                }
-              } else if (messageAVdata.type === "candidate") {
-                handleCandidate(messageAVdata.messageData.candidate);
-              } else {
-                console.log("不支持的proxy类型");
-              }
-            }
-            console.log("收到消息：", message);
-            if (data.messageList == null) {
-              data.messageList = [];
-            }
-            data.messageList.push(message);
-            scrollToBottom();
-          }
-        };
-        scrollToBottom();
+        await activate(router.currentRoute.value.params.id);
       } catch (error) {
         console.error(error);
       }
+    });
+
+    const offChatMessage = on("chat-message", handleIncomingMessage);
+    const offWsConnected = on("ws:connected", handleReconnected);
+    onBeforeUnmount(() => {
+      offChatMessage();
+      offWsConnected();
+      store.commit("setCurrentChatId", "");
     });
     const getChatContactInfo = async (id) => {
       try {
@@ -1174,17 +1020,6 @@ export default {
       }
     };
 
-    const handleCreateGroup = async () => {
-      try {
-        data.createGroupReq.owner_id = data.userInfo.uuid;
-        const response = await axios.post(
-          store.state.apiUrl + "/group/createGroup",
-          data.createGroupReq
-        );
-      } catch (error) {
-        console.error(error);
-      }
-    };
     const showUserContactInfoModal = () => {
       data.isUserContactInfoModalVisible = true;
     };
@@ -1273,10 +1108,19 @@ export default {
           store.state.apiUrl + "/session/deleteSession",
           req
         );
-        console.log(rsp.data);
+        if (rsp.data && rsp.data.code !== 0) {
+          ElMessage.error(
+            (rsp.data && rsp.data.message) || "删除会话失败，请重试"
+          );
+          return;
+        }
+        ElMessage.success("会话已删除");
       } catch (error) {
+        ElMessage.error("删除会话失败，请重试");
         console.error(error);
+        return;
       }
+      emit("session-list-changed");
       router.push("/chat/sessionlist");
     };
     const preToDeleteContact = () => {
@@ -1288,10 +1132,6 @@ export default {
         })
           .then(() => {
             deleteContact();
-            ElMessage({
-              type: "success",
-              message: "成功删除",
-            });
           })
           .catch(() => {
             ElMessage({
@@ -1313,10 +1153,19 @@ export default {
           store.state.apiUrl + "/contact/deleteContact",
           req
         );
-        console.log(rsp.data);
+        if (rsp.data && rsp.data.code !== 0) {
+          ElMessage.error(
+            (rsp.data && rsp.data.message) || "删除联系人失败，请重试"
+          );
+          return;
+        }
+        ElMessage.success("联系人已删除");
       } catch (error) {
+        ElMessage.error("删除联系人失败，请重试");
         console.error(error);
+        return;
       }
+      emit("session-list-changed");
       router.push("/chat/sessionlist");
     };
     const preToBlackContact = () => {
@@ -1328,10 +1177,6 @@ export default {
         })
           .then(() => {
             blackContact();
-            ElMessage({
-              type: "success",
-              message: "成功拉黑",
-            });
           })
           .catch(() => {
             ElMessage({
@@ -1353,17 +1198,33 @@ export default {
           store.state.apiUrl + "/contact/blackContact",
           req
         );
-        console.log(rsp.data);
+        if (rsp.data && rsp.data.code !== 0) {
+          ElMessage.error(
+            (rsp.data && rsp.data.message) || "拉黑失败，请重试"
+          );
+          return;
+        }
+        ElMessage.success("已拉黑该联系人");
       } catch (error) {
+        ElMessage.error("拉黑失败，请重试");
         console.error(error);
+        return;
       }
+      emit("session-list-changed");
       router.push("/chat/sessionlist");
     };
+    let lastSendAt = 0;
     const sendMessage = () => {
       const content = data.chatMessage.trim();
       if (!content) {
         return;
       }
+      // 防重复：500ms 内的连按（Enter 连击/双击发送按钮）直接忽略，避免一次操作发出多条
+      const now = Date.now();
+      if (now - lastSendAt < 500) {
+        return;
+      }
+      lastSendAt = now;
       const chatMessageRequest = {
         session_id: data.sessionId,
         type: 0,
@@ -1377,7 +1238,10 @@ export default {
         file_name: "",
         file_type: "",
       };
-      store.state.socket.send(JSON.stringify(chatMessageRequest));
+      // 连接断开时消息进入待发队列，重连后自动补发
+      if (!sendChatMessage(store, chatMessageRequest)) {
+        ElMessage.info("当前连接断开，消息将在重连后自动发送");
+      }
       data.chatMessage = "";
       scrollToBottom();
     };
@@ -1397,26 +1261,9 @@ export default {
         file_type: data.fileList[0].type,
       };
       console.log(chatFileMessageRequest);
-      store.state.socket.send(JSON.stringify(chatFileMessageRequest));
-      scrollToBottom();
-    };
-
-    const sendAvatarMessage = (avatarUrl) => {
-      const chatAvatarMessageRequest = {
-        session_id: data.sessionId,
-        type: 2,
-        content: "",
-        url: avatarUrl,
-        send_id: data.userInfo.uuid,
-        send_name: data.userInfo.nickname,
-        send_avatar: data.userInfo.avatar,
-        receive_id: data.contactInfo.contact_id,
-        file_size: getFileSize(data.avatarList[0].size),
-        file_name: data.avatarList[0].name,
-        file_type: data.avatarList[0].type,
-      };
-      console.log(chatAvatarMessageRequest);
-      store.state.socket.send(JSON.stringify(chatAvatarMessageRequest));
+      if (!sendChatMessage(store, chatFileMessageRequest)) {
+        ElMessage.info("当前连接断开，文件消息将在重连后自动发送");
+      }
       scrollToBottom();
     };
 
@@ -1476,12 +1323,14 @@ export default {
 
     const scrollToBottom = () => {
       nextTick(() => {
-        if (!data.innerRef || !data.scrollbarRef) {
+        const scrollbar = scrollbarRef.value;
+        const listEl = innerRef.value;
+        if (!scrollbar || !listEl) {
           return;
         }
-        const scrollHeight = data.innerRef.scrollHeight;
-        console.log(scrollHeight);
-        data.scrollbarRef.setScrollTop(scrollHeight);
+        const scrollHeight = listEl.scrollHeight;
+        console.log("滚动到底部:", scrollHeight);
+        scrollbar.setScrollTop(scrollHeight);
       });
     };
 
@@ -1546,6 +1395,7 @@ export default {
         if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           console.log(rsp.data.message);
+          emit("session-list-changed");
           router.push("/chat/sessionlist");
         } else if (rsp.data.code == 40000) {
           ElMessage.warning(rsp.data.message);
@@ -1572,6 +1422,7 @@ export default {
         if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           console.log(rsp.data.message);
+          emit("session-list-changed");
           router.push("/chat/sessionlist");
         } else if (rsp.data.code == 40000) {
           ElMessage.warning(rsp.data.message);
@@ -1585,11 +1436,16 @@ export default {
       }
     };
 
-    const handleUploadSuccess = () => {
+    const handleUploadSuccess = (response) => {
+      // response.data 是后端落盘后的相对路径（如 /static/files/<新文件名>）
+      const savedPath = response && response.data;
+      if (!savedPath) {
+        ElMessage.error("文件上传失败，请重试");
+        data.fileList = [];
+        return;
+      }
       ElMessage.success("文件上传成功");
-      sendFileMessage(
-        store.state.backendUrl + "/static/files/" + data.fileList[0].name
-      );
+      sendFileMessage(store.state.backendUrl + savedPath);
       data.fileList = [];
     };
 
@@ -1661,6 +1517,75 @@ export default {
       }
     };
 
+    // ---------- 消息类型辅助（媒体内联渲染 / 通话记录行） ----------
+
+    const isImage = (message) =>
+      message.type == 2 && (message.file_type || "").startsWith("image/");
+    const isVideo = (message) =>
+      message.type == 2 && (message.file_type || "").startsWith("video/");
+    const isAudio = (message) =>
+      message.type == 2 && (message.file_type || "").startsWith("audio/");
+    const isMediaMessage = (message) =>
+      isImage(message) || isVideo(message) || isAudio(message);
+
+    // 历史里的 type=3 信令（start/receive/reject 落库）渲染为一条通话记录
+    const callLogText = (message) => {
+      let av = {};
+      try {
+        av = JSON.parse(message.av_data) || {};
+      } catch (e) {
+        // ignore
+      }
+      const who = message.send_name || "";
+      if (av.type === "start_call") {
+        return `${who} 发起了音视频通话`;
+      }
+      if (av.type === "receive_call") {
+        return `${who} 已接听`;
+      }
+      if (av.type === "reject_call") {
+        return `${who} 拒绝了通话`;
+      }
+      return "通话记录";
+    };
+
+    const copyAllMessages = async () => {
+      const lines = (data.messageList || [])
+        .filter((m) => m.type != 3)
+        .map(
+          (m) =>
+            `[${m.created_at}] ${m.send_name}: ${
+              m.type == 2 ? "[文件] " + (m.file_name || "") : m.content
+            }`
+        );
+      if (!lines.length) {
+        ElMessage.warning("当前会话没有可复制的消息");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(lines.join("\n"));
+        ElMessage.success("已复制当前会话全部消息");
+      } catch (e) {
+        ElMessage.error("复制失败，浏览器未授权剪贴板权限");
+      }
+    };
+
+    // 发起音视频通话：交给全局 CallOverlay 处理（WebRTC 逻辑不再放在聊天窗口内）
+    const startCallRequest = () => {
+      if (!data.contactInfo.contact_id || data.contactInfo.contact_id[0] !== "U") {
+        ElMessage.warning("音视频通话目前仅支持单聊");
+        return;
+      }
+      emit("call:start", {
+        peer: {
+          id: data.contactInfo.contact_id,
+          name: data.contactInfo.contact_name,
+          avatar: data.contactInfo.contact_avatar,
+          sessionId: data.sessionId,
+        },
+      });
+    };
+
     const handleUpdateGroupInfo = async () => {
       try {
         if (
@@ -1673,9 +1598,17 @@ export default {
           return;
         }
         if (data.avatarList.length > 0) {
-          data.updateGroupInfo.avatar =
-            "/static/avatars/" + data.avatarList[0].name;
-          data.uploadAvatarRef.submit();
+          // 先上传拿后端真实路径，再提交更新（避免 submit 未完成即发请求、路径靠猜）
+          try {
+            data.updateGroupInfo.avatar = await uploadFile(
+              "/message/uploadAvatar",
+              data.avatarList[0].raw
+            );
+          } catch (uploadError) {
+            ElMessage.error("群头像上传失败，请重试");
+            console.error(uploadError);
+            return;
+          }
         }
         data.updateGroupInfo.uuid = data.contactInfo.contact_id;
         const rsp = await axios.post(
@@ -1685,6 +1618,7 @@ export default {
         if (rsp.data.code == 0) {
           ElMessage.success(rsp.data.message);
           data.isUpdateGroupInfoModalVisible = false;
+          data.avatarList = [];
           await getChatContactInfo(router.currentRoute.value.params.id);
         } else {
           ElMessage.error(rsp.data.message);
@@ -1766,375 +1700,16 @@ export default {
         console.error(error);
       }
     };
-    const showAVContainerModal = () => {
-      data.isAVContainerModalVisible = true;
-    };
-
-    const closeAVContainerModal = () => {
-      if (data.localVideo || data.remoteVideo) {
-        ElMessage.warning("请先结束通话");
-        return;
-      }
-      data.isAVContainerModalVisible = false;
-    };
-
-    const createRtcPeerConnection = () => {
-      if (data.rtcPeerConn) {
-        console.log("peer connection has already been created.");
-        return;
-      }
-      data.rtcPeerConn = new RTCPeerConnection(data.ICE_CFG);
-      data.rtcPeerConn.onicecandidate = (event) => {
-        if (event.candidate) {
-          var proxyCandidateMessage = {
-            messageId: "PROXY",
-            type: "candidate",
-            messageData: {
-              candidate: event.candidate,
-            },
-          };
-          const rtcMessageRequest = {
-            session_id: data.sessionId,
-            type: 3,
-            content: "",
-            url: "",
-            send_id: data.userInfo.uuid,
-            send_name: data.userInfo.nickname,
-            send_avatar: data.userInfo.avatar,
-            receive_id: data.contactInfo.contact_id,
-            file_size: "",
-            file_name: "",
-            file_type: "",
-            av_data: JSON.stringify(proxyCandidateMessage),
-          };
-          console.log(rtcMessageRequest);
-          store.state.socket.send(JSON.stringify(rtcMessageRequest));
-        }
-      };
-      data.rtcPeerConn.oniceconnectionstatechange = (event) => {
-        console.log(
-          "oniceconnectionstatechange",
-          data.rtcPeerConn.iceConnectionState
-        );
-      };
-      // 对端传来媒体轨道
-      data.rtcPeerConn.ontrack = (event) => {
-        if (data.remoteStream === null) {
-          data.remoteStream = new MediaStream();
-          data.remoteVideo = document.querySelector("video.remote-video");
-          data.remoteVideo.srcObject = data.remoteStream;
-          data.remoteVideo.style.display = "inline-block";
-        }
-        data.remoteStream.addTrack(event.track);
-      };
-    };
-
-    const closeRtcPeerConnection = () => {
-      if (data.rtcPeerConn) {
-        data.rtcPeerConn.close();
-        data.rtcPeerConn = null;
-      }
-    };
-
-    const getLocalMediaStream = () => {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        console.log("getUserMedia is not supported!");
-        return null;
-      } else if (data.localStream) {
-        console.log("localStream already exist.");
-        return data.localStream;
-      } else {
-        var constraints = {
-          video: true,
-          audio: true,
-        };
-        return navigator.mediaDevices.getUserMedia(constraints);
-      }
-    };
-
-    const closeLocalMediaStream = () => {
-      if (data.localStream != null) {
-        data.localStream.getTracks().forEach((track) => {
-          track.stop();
-        });
-        data.localStream = null;
-      }
-    };
-
-    const attachMediaStreamToLocalVideo = () => {
-      data.localVideo = document.querySelector("video.local-video");
-      data.localVideo.srcObject = data.localStream;
-      data.localVideo.muted = true;
-      data.localVideo.style.display = "inline-block";
-    };
-
-    const attachMediaStreamToPeerConnection = () => {
-      data.localStream.getTracks().forEach((track) => {
-        data.rtcPeerConn.addTrack(track);
-      });
-    };
-
-    const createOffer = () => {
-      var offerOpts = {
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true,
-      };
-      data.rtcPeerConn
-        .createOffer(offerOpts)
-        .then((desc) => {
-          data.rtcPeerConn.setLocalDescription(desc);
-          var proxySdpMessage = {
-            messageId: "PROXY",
-            type: "sdp",
-            messageData: {
-              sdp: desc,
-            },
-          };
-          console.log(desc);
-          const rtcMessageRequest = {
-            session_id: data.sessionId,
-            type: 3,
-            content: "",
-            url: "",
-            send_id: data.userInfo.uuid,
-            send_name: data.userInfo.nickname,
-            send_avatar: data.userInfo.avatar,
-            receive_id: data.contactInfo.contact_id,
-            file_size: "",
-            file_name: "",
-            file_type: "",
-            av_data: JSON.stringify(proxySdpMessage),
-          };
-          store.state.socket.send(JSON.stringify(rtcMessageRequest));
-        })
-        .catch((err) => {
-          console.log(
-            `createOffer failed, error name: ${err.name}, error message: ${err.message}`
-          );
-        });
-    };
-
-    const createAnswer = () => {
-      data.rtcPeerConn
-        .createAnswer()
-        .then((desc) => {
-          data.rtcPeerConn.setLocalDescription(desc);
-          var proxySdpMessage = {
-            messageId: "PROXY",
-            type: "sdp",
-            messageData: {
-              sdp: desc,
-            },
-          };
-          console.log(desc);
-          const rtcMessageRequest = {
-            session_id: data.sessionId,
-            type: 3,
-            content: "",
-            url: "",
-            send_id: data.userInfo.uuid,
-            send_name: data.userInfo.nickname,
-            send_avatar: data.userInfo.avatar,
-            receive_id: data.contactInfo.contact_id,
-            file_size: "",
-            file_name: "",
-            file_type: "",
-            av_data: JSON.stringify(proxySdpMessage),
-          };
-          store.state.socket.send(JSON.stringify(rtcMessageRequest));
-        })
-        .catch((err) => {
-          console.log(
-            `createAnswer failed, error name: ${err.name}, error message: ${err.message}`
-          );
-        });
-    };
-
-    const startCall = async (isInitiator) => {
-      console.log(data.localVideo);
-      console.log(data.localStream);
-      if (data.localVideo) {
-        ElMessage.warning("已经在通话中，请勿重复发起");
-        return;
-      }
-      if (isInitiator && !data.ableToStartCall) {
-        ElMessage.warning(
-          "对方已经发起通话，请先接收通话或拒绝通话，才能发起下一次通话"
-        );
-        return;
-      }
-      if (!isInitiator && !data.ableToReceiveOrRejectCall) {
-        ElMessage.warning("对方没有发起通话或已在通话中，无法接收通话");
-        return;
-      }
-      createRtcPeerConnection();
-      data.localStream = await getLocalMediaStream();
-      attachMediaStreamToLocalVideo();
-      attachMediaStreamToPeerConnection();
-      if (isInitiator) {
-        var startCallMessage = {
-          messageId: "PROXY",
-          type: "start_call",
-        };
-        const rtcMessageRequest = {
-          session_id: data.sessionId,
-          type: 3,
-          content: "",
-          url: "",
-          send_id: data.userInfo.uuid,
-          send_name: data.userInfo.nickname,
-          send_avatar: data.userInfo.avatar,
-          receive_id: data.contactInfo.contact_id,
-          file_size: "",
-          file_name: "",
-          file_type: "",
-          av_data: JSON.stringify(startCallMessage),
-        };
-        store.state.socket.send(JSON.stringify(rtcMessageRequest));
-      } else {
-        var receiveCallMessage = {
-          messageId: "PROXY",
-          type: "receive_call",
-        };
-        const rtcMessageRequest = {
-          session_id: data.sessionId,
-          type: 3,
-          content: "",
-          url: "",
-          send_id: data.userInfo.uuid,
-          send_name: data.userInfo.nickname,
-          send_avatar: data.userInfo.avatar,
-          receive_id: data.contactInfo.contact_id,
-          file_size: "",
-          file_name: "",
-          file_type: "",
-          av_data: JSON.stringify(receiveCallMessage),
-        };
-        store.state.socket.send(JSON.stringify(rtcMessageRequest));
-        data.ableToReceiveOrRejectCall = false;
-      }
-    };
-
-    const sendEndCall = () => {
-      if (data.localVideo == null && data.remoteVideo == null) {
-        ElMessage.warning("尚未开始通话，无法挂断");
-        return;
-      }
-      if (data.localVideo) data.localVideo.style.display = "none";
-      if (data.remoteVideo) data.remoteVideo.style.display = "none";
-      closeLocalMediaStream();
-      closeRtcPeerConnection();
-      data.remoteStream = null;
-      data.localStream = null;
-      data.localVideo = null;
-      data.remoteVideo = null;
-      data.ableToReceiveOrRejectCall = false;
-      data.ableToStartCall = true;
-      var proxyPeerLeaveMessage = {
-        messageId: "PEER_LEAVE",
-      };
-      const rtcMessageRequest = {
-        session_id: data.sessionId,
-        type: 3,
-        content: "",
-        url: "",
-        send_id: data.userInfo.uuid,
-        send_name: data.userInfo.nickname,
-        send_avatar: data.userInfo.avatar,
-        receive_id: data.contactInfo.contact_id,
-        file_size: "",
-        file_name: "",
-        file_type: "",
-        av_data: JSON.stringify(proxyPeerLeaveMessage),
-      };
-      store.state.socket.send(JSON.stringify(rtcMessageRequest));
-    };
-
-    const endCall = () => {
-      if (data.localVideo) data.localVideo.style.display = "none";
-      if (data.remoteVideo) data.remoteVideo.style.display = "none";
-      closeLocalMediaStream();
-      closeRtcPeerConnection();
-      data.remoteStream = null;
-      data.localStream = null;
-      data.localVideo = null;
-      data.remoteVideo = null;
-      data.ableToReceiveOrRejectCall = false;
-      data.ableToStartCall = true;
-      ElMessage.warning("对方拒绝通话");
-    };
-
-    const receiveEndCall = () => {
-      if (data.localVideo) data.localVideo.style.display = "none";
-      if (data.remoteVideo) data.remoteVideo.style.display = "none";
-      closeLocalMediaStream();
-      closeRtcPeerConnection();
-      data.remoteStream = null;
-      data.localStream = null;
-      data.localVideo = null;
-      data.remoteVideo = null;
-      data.ableToReceiveOrRejectCall = false;
-      data.ableToStartCall = true;
-      ElMessage.warning("对方已挂断");
-    };
-
-    const handleOfferSdp = (val) => {
-      data.rtcPeerConn
-        .setRemoteDescription(new RTCSessionDescription(val))
-        .then(() => {
-          createAnswer();
-        })
-        .catch((err) => {
-          console.log("rtcPeerConn setRemoteDescription failed", err);
-        });
-    };
-
-    const handleAnswerSdp = (val) => {
-      data.rtcPeerConn
-        .setRemoteDescription(new RTCSessionDescription(val))
-        .catch((err) => {
-          console.log("rtcPeerConn setRemoteDescription failed", err);
-        });
-    };
-
-    const handleCandidate = (val) => {
-      data.rtcPeerConn.addIceCandidate(new RTCIceCandidate(val));
-    };
-
-    const rejectCall = () => {
-      if (!data.ableToReceiveOrRejectCall) {
-        ElMessage.warning("对方没有发起通话或已在通话中，无法拒绝通话");
-        return;
-      }
-      var rejectCallMessage = {
-        messageId: "PROXY",
-        type: "reject_call",
-      };
-      const rtcMessageRequest = {
-        session_id: data.sessionId,
-        type: 3,
-        content: "",
-        url: "",
-        send_id: data.userInfo.uuid,
-        send_name: data.userInfo.nickname,
-        send_avatar: data.userInfo.avatar,
-        receive_id: data.contactInfo.contact_id,
-        file_size: "",
-        file_name: "",
-        file_type: "",
-        av_data: JSON.stringify(rejectCallMessage),
-      };
-      store.state.socket.send(JSON.stringify(rtcMessageRequest));
-      data.ableToReceiveOrRejectCall = false;
-    };
-
     return {
       ...toRefs(data),
+      scrollbarRef,
+      innerRef,
+      store,
+      uploadHeaders,
       chatStatusText,
       chatTitleMeta,
       canSendMessage,
       router,
-      handleCreateGroup,
       showUserContactInfoModal,
       quitUserContactInfoModal,
       showGroupContactInfoModal,
@@ -2157,6 +1732,13 @@ export default {
       beforeFileUpload,
       downloadFile,
       getFileSize,
+      isImage,
+      isVideo,
+      isAudio,
+      isMediaMessage,
+      callLogText,
+      copyAllMessages,
+      startCallRequest,
       showUpdateGroupInfoModal,
       quitUpdateGroupInfoModal,
       beforeAvatarUpload,
@@ -2169,24 +1751,6 @@ export default {
       getGroupMemberList,
       handleCheckboxChange,
       handleRemoveGroupMembers,
-      createRtcPeerConnection,
-      closeRtcPeerConnection,
-      getLocalMediaStream,
-      closeLocalMediaStream,
-      attachMediaStreamToLocalVideo,
-      attachMediaStreamToPeerConnection,
-      createOffer,
-      createAnswer,
-      startCall,
-      sendEndCall,
-      receiveEndCall,
-      handleOfferSdp,
-      handleAnswerSdp,
-      handleCandidate,
-      showAVContainerModal,
-      closeAVContainerModal,
-      rejectCall,
-      endCall,
     };
   },
 };
@@ -2549,8 +2113,7 @@ h3 {
 }
 
 .action-btn.el-button,
-.removegroupmembers-button.el-button,
-.video-modal-footer-btn.el-button {
+.removegroupmembers-button.el-button {
   border: 1px solid var(--go-border);
   background: #f4f7f5;
   color: var(--go-text);
@@ -2558,78 +2121,73 @@ h3 {
 }
 
 .action-btn.el-button:hover,
-.removegroupmembers-button.el-button:hover,
-.video-modal-footer-btn.el-button:hover {
+.removegroupmembers-button.el-button:hover {
   background: #ebebeb;
   color: var(--go-text);
 }
 
-.video-modal-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  justify-content: center;
+.conn-state-pill {
+  display: inline-flex;
   align-items: center;
-  z-index: 2000;
-  background: rgba(11, 16, 13, 0.34);
-  backdrop-filter: blur(10px);
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(245, 108, 108, 0.1);
+  color: #e6666c;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
-.video-modal-content {
-  width: min(720px, calc(100vw - 32px));
-  min-height: 420px;
-  padding: 22px;
+.message-call-log {
+  width: 100%;
+  padding: 4px 0;
+  text-align: center;
+  color: var(--go-text-muted);
+  font-size: 12px;
+  background: rgba(240, 244, 241, 0.7);
+  border-radius: 10px;
+}
+
+.left-message-media,
+.right-message-media {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  border-radius: 24px;
-  border: 1px solid var(--go-border);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(246, 249, 246, 0.98) 100%);
-  box-shadow: var(--go-shadow);
+  gap: 6px;
+  max-width: 320px;
 }
 
-.local-video,
-.remote-video {
-  width: min(300px, 42vw);
-  height: 240px;
-  border-radius: 16px;
-  border: 1px solid var(--go-border);
+.message-image {
+  width: 240px;
+  height: 180px;
+  border-radius: 14px;
+  border: 1px solid rgba(217, 226, 219, 0.9);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 22px rgba(26, 47, 34, 0.05);
+  cursor: zoom-in;
+}
+
+.message-video {
+  width: 300px;
+  max-width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(217, 226, 219, 0.9);
   background: #111;
-  object-fit: cover;
 }
 
-.video-modal-header {
-  height: 56px;
+.message-audio {
+  width: 260px;
+  max-width: 100%;
+}
+
+.left-message-media-meta,
+.right-message-media-meta {
   display: flex;
   align-items: center;
-  justify-content: center;
-}
-
-.video-modal-header h2 {
-  margin: 0;
-  color: var(--go-text-strong);
-}
-
-.video-modal-body {
-  width: 100%;
-  min-height: 280px;
-  padding: 14px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 14px;
-  border-radius: 18px;
-  border: 1px solid #e6ede8;
-  background: #f4f7f4;
-}
-
-.video-modal-footer {
-  width: 100%;
-  padding-top: 14px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
   gap: 8px;
+  color: var(--go-text-muted);
+  font-size: 12px;
+  word-break: break-all;
 }
 
 @media (max-width: 900px) {
@@ -2642,15 +2200,13 @@ h3 {
     width: min(88%, 620px);
   }
 
-  .video-modal-body {
-    flex-direction: column;
+  .message-image {
+    width: 200px;
+    height: 150px;
   }
 
-  .local-video,
-  .remote-video {
-    width: 100%;
-    max-width: 360px;
-    height: 220px;
+  .message-video {
+    width: 240px;
   }
 }
 </style>

@@ -102,6 +102,7 @@
       <el-button
         type="primary"
         class="auth-submit-btn auth-submit-btn--lift"
+        :loading="registerLoading"
         @click="handleRegister"
       >
         注册
@@ -125,6 +126,7 @@ import { ElMessage } from "element-plus";
 import { useStore } from "vuex";
 import AuthShell from "@/components/AuthShell.vue";
 import { connectSocket } from "@/utils/ws";
+import { errorMsg } from "@/utils/error";
 
 export default {
   name: "Register",
@@ -143,9 +145,13 @@ export default {
     const router = useRouter();
     const store = useStore();
     const smsCountdown = ref(0);
+    const registerLoading = ref(false);
     let smsTimer = null;
 
     const handleRegister = async () => {
+      if (registerLoading.value) {
+        return;
+      }
       try {
         if (
           !data.registerData.nickname ||
@@ -167,6 +173,7 @@ export default {
           ElMessage.error("请输入有效的手机号码。");
           return;
         }
+        registerLoading.value = true;
         const response = await axios.post(
           store.state.apiUrl + "/user/register",
           data.registerData
@@ -188,8 +195,10 @@ export default {
           console.log(response.data.message);
         }
       } catch (error) {
-        ElMessage.error(error);
+        ElMessage.error(errorMsg(error, "注册失败，请稍后重试"));
         console.log(error);
+      } finally {
+        registerLoading.value = false;
       }
     };
 
@@ -271,6 +280,7 @@ export default {
       handleSmsLogin,
       sendSmsCode,
       smsCountdown,
+      registerLoading,
     };
   },
 };

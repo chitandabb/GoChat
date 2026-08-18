@@ -60,6 +60,7 @@
       <el-button
         type="primary"
         class="auth-submit-btn auth-submit-btn--lift"
+        :loading="smsLoginLoading"
         @click="handleSmsLogin"
       >
         登录
@@ -81,6 +82,7 @@ import { ElMessage } from "element-plus";
 import { useStore } from "vuex";
 import AuthShell from "@/components/AuthShell.vue";
 import { connectSocket } from "@/utils/ws";
+import { errorMsg } from "@/utils/error";
 
 export default {
   name: "smsLogin",
@@ -97,9 +99,13 @@ export default {
     const router = useRouter();
     const store = useStore();
     const smsCountdown = ref(0);
+    const smsLoginLoading = ref(false);
     let smsTimer = null;
 
     const handleSmsLogin = async () => {
+      if (smsLoginLoading.value) {
+        return;
+      }
       try {
         if (!data.loginData.telephone || !data.loginData.sms_code) {
           ElMessage.error("请填写完整登录信息。");
@@ -109,6 +115,7 @@ export default {
           ElMessage.error("请输入有效的手机号码。");
           return;
         }
+        smsLoginLoading.value = true;
         const response = await axios.post(
           store.state.apiUrl + "/auth/smsLogin",
           data.loginData
@@ -137,7 +144,9 @@ export default {
           ElMessage.error(response.data.message);
         }
       } catch (error) {
-        ElMessage.error(error);
+        ElMessage.error(errorMsg(error, "登录失败，请稍后重试"));
+      } finally {
+        smsLoginLoading.value = false;
       }
     };
 
@@ -219,6 +228,7 @@ export default {
       handleRegister,
       sendSmsCode,
       smsCountdown,
+      smsLoginLoading,
     };
   },
 };

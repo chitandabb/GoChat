@@ -39,6 +39,12 @@
               </el-dropdown-item>
               <el-dropdown-item @click="showNewContactModal">
                 新的好友
+                <el-badge
+                  :value="newContactCount"
+                  :hidden="newContactCount <= 0"
+                  :max="99"
+                  class="newcontact-badge"
+                />
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -259,6 +265,7 @@
                       ref="uploadRef"
                       :auto-upload="false"
                       :action="uploadPath"
+                      :headers="uploadHeaders"
                       :on-success="handleUploadSuccess"
                       :before-upload="beforeFileUpload"
                     >
@@ -287,7 +294,7 @@
           router
           unique-opened
           :default-openeds="['contacts']"
-          @open="handleShowUserList"
+          @open="refreshUserList"
           @close="handleHideUserList"
         >
           <el-sub-menu index="contacts">
@@ -371,7 +378,7 @@
           router
           unique-opened
           :default-openeds="['joined-groups']"
-          @open="handleShowMyJoinedGroupList"
+          @open="refreshMyJoinedGroupList"
           @close="handleHideMyJoinedGroupList"
         >
           <el-sub-menu index="joined-groups">
@@ -406,13 +413,22 @@
 </template>
 
 <script>
-import { computed, onMounted, reactive, toRefs } from "vue";
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  toRefs,
+} from "vue";
 import { useRouter } from "vue-router";
 import { useStore } from "vuex";
 import axios from "axios";
 import { ElMessage } from "element-plus";
 import Modal from "./Modal.vue";
 import SmallModal from "./SmallModal.vue";
+import { pollNewContacts } from "@/utils/notify";
+import { errorMsg } from "@/utils/error";
+import { uploadFile } from "@/utils/upload";
 export default {
   name: "ContactListModal",
   components: {
@@ -457,6 +473,11 @@ export default {
       loadingMyGroupList: false,
       loadingMyJoinedGroupList: false,
     });
+    // el-upload 不走 axios 拦截器，需要手动带上 Bearer Token（后端上传接口有鉴权）
+    const uploadHeaders = computed(() => ({
+      Authorization: "Bearer " + store.state.accessToken,
+    }));
+    const newContactCount = computed(() => store.state.newContactCount);
 
     const matchesSearch = (values) => {
       const keyword = data.contactSearch.trim().toLowerCase();
@@ -521,10 +542,17 @@ export default {
       try {
         data.createGroupReq.owner_id = data.userInfo.uuid;
         if (data.fileList.length > 0) {
-          data.createGroupReq.avatar =
-            "/static/avatars/" + data.fileList[0].name;
-          console.log(data.createGroupReq.avatar);
-          data.uploadRef.submit();
+          // 先上传拿后端真实路径，再创建群（避免 submit 未完成即建群、路径靠猜）
+          try {
+            data.createGroupReq.avatar = await uploadFile(
+              "/message/uploadAvatar",
+              data.fileList[0].raw
+            );
+          } catch (uploadError) {
+            ElMessage.error("群头像上传失败，请重试");
+            console.error(uploadError);
+            return;
+          }
         }
         const response = await axios.post(
           store.state.apiUrl + "/group/createGroup",
@@ -532,6 +560,7 @@ export default {
         );
         if (response.data.code == 0) {
           data.loadedMyGroupList = false;
+          data.fileList = [];
           await handleShowMyGroupList();
         }
       } catch (error) {
@@ -728,7 +757,7 @@ export default {
           console.error(rsp.data.message);
         }
       } catch (error) {
-        ElMessage.error(error);
+        ElMessage.error(errorMsg(error));
         console.error(error);
       }
     };
@@ -807,6 +836,7 @@ export default {
             (c) => c.contact_id !== contactId
           );
           data.loadedUserList = false;
+          pollNewContacts();
           await handleShowUserList();
         } else {
           ElMessage.error(rsp.data.message);
@@ -855,6 +885,7 @@ export default {
           data.newContactList = data.newContactList.filter(
             (c) => c.contact_id !== contactId
           );
+          pollNewContacts();
         } else if (rsp.data.code == 40000) {
           ElMessage.warning(rsp.data.message);
           console.log(rsp.data.message);
@@ -882,6 +913,7 @@ export default {
           data.newContactList = data.newContactList.filter(
             (c) => c.contact_id !== contactId
           );
+          pollNewContacts();
         } else if (rsp.data.code == 40000) {
           ElMessage.warning(rsp.data.message);
           console.log(rsp.data.message);
@@ -890,7 +922,7 @@ export default {
           console.log(rsp.data.message);
         }
       } catch (error) {
-        ElMessage.error(error);
+        ElMessage.error(errorMsg(error));
         console.error(error);
       }
     };
@@ -917,7 +949,7 @@ export default {
           console.log(rsp.data.message);
         }
       } catch (error) {
-        ElMessage.error(error);
+        ElMessage.error(errorMsg(error));
         console.error(error);
       }
     };
@@ -934,16 +966,64 @@ export default {
       }
     };
 
+    // 弹窗每次打开都强制重拉列表，避免“只加载一次”导致数据陈旧
+    const refreshUserList = async () => {
+      data.loadedUserList = false;
+      await handleShowUserList();
+    };
+    const refreshMyJoinedGroupList = async () => {
+      data.loadedMyJoinedGroupList = false;
+      await handleShowMyJoinedGroupList();
+    };
+    const refreshAllLists = async () => {
+      await Promise.all([refreshUserList(), refreshMyJoinedGroupList()]);
+    };
+
+    // 兜底自动刷新：60s 定时 + 页面重新可见时刷新
+    let refreshTimer = null;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshAllLists();
+      }
+    };
+    const startAutoRefresh = () => {
+      stopAutoRefresh();
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener("focus", handleVisibilityChange);
+      refreshTimer = setInterval(() => {
+        if (document.visibilityState === "visible") {
+          refreshAllLists();
+        }
+      }, 60 * 1000);
+    };
+    const stopAutoRefresh = () => {
+      if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+      }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleVisibilityChange);
+    };
+
     onMounted(() => {
       preloadContactLists();
+      startAutoRefresh();
+    });
+
+    onBeforeUnmount(() => {
+      stopAutoRefresh();
     });
 
     return {
       ...toRefs(data),
+      uploadHeaders,
+      newContactCount,
       filteredContactUserList,
       filteredMyGroupList,
       filteredMyJoinedGroupList,
       preloadContactLists,
+      refreshUserList,
+      refreshMyJoinedGroupList,
       router,
       handleCreateGroup,
       showCreateGroupModal,
@@ -1229,5 +1309,10 @@ h3 {
   justify-content: flex-start;
   color: var(--go-text-soft);
   cursor: default;
+}
+
+.newcontact-badge {
+  margin-left: 8px;
+  transform: translateY(-2px);
 }
 </style>

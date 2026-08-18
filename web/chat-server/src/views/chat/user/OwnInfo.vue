@@ -115,6 +115,7 @@
                   ref="uploadRef"
                   :auto-upload="false"
                   :action="uploadPath"
+                  :headers="uploadHeaders"
                   :on-success="handleUploadSuccess"
                   :before-upload="beforeFileUpload"
                 >
@@ -139,12 +140,13 @@
 </template>
 
 <script>
-import { reactive, toRefs } from "vue";
+import { computed, reactive, toRefs } from "vue";
 import { useStore } from "vuex";
 import axios from "axios";
 import Modal from "@/components/Modal.vue";
 import { checkEmailValid } from "@/assets/js/valid.js";
 import { ElMessage } from "element-plus";
+import { uploadFile } from "@/utils/upload";
 
 export default {
   name: "OwnInfo",
@@ -169,6 +171,10 @@ export default {
       fileList: [],
       cnt: 0,
     });
+    // el-upload 不走 axios 拦截器，需要手动带上 Bearer Token（后端上传接口有鉴权）
+    const uploadHeaders = computed(() => ({
+      Authorization: "Bearer " + store.state.accessToken,
+    }));
 
     const showMyInfoModal = () => {
       data.isMyInfoModalVisible = true;
@@ -207,10 +213,20 @@ export default {
         data.userInfo.email = data.updateInfo.email;
       }
       if (data.fileList.length != 0) {
-        data.updateInfo.avatar = "/static/avatars/" + data.fileList[0].name;
-        data.userInfo.avatar = store.state.backendUrl + data.updateInfo.avatar;
-        store.commit("setUserInfo", data.userInfo);
-        data.uploadRef.submit();
+        // 先上传拿后端真实路径，再提交个人信息（避免 submit 未完成即发请求、路径靠猜）
+        try {
+          const savedPath = await uploadFile(
+            "/message/uploadAvatar",
+            data.fileList[0].raw
+          );
+          data.updateInfo.avatar = savedPath;
+          data.userInfo.avatar = store.state.backendUrl + savedPath;
+          store.commit("setUserInfo", data.userInfo);
+        } catch (uploadError) {
+          ElMessage.error("头像上传失败，请重试");
+          console.error(uploadError);
+          return;
+        }
       }
       if (data.updateInfo.birthday != "") {
         data.userInfo.birthday = data.updateInfo.birthday;
@@ -274,6 +290,7 @@ export default {
 
     return {
       ...toRefs(data),
+      uploadHeaders,
       showMyInfoModal,
       closeMyInfoModal,
       quitMyInfoModal,
