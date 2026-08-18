@@ -96,7 +96,7 @@ wss://host/wss?token=<access_token>
 ```
 
 - 升级前校验 token:无效 / 过期直接拒绝升级(HTTP 401),不建立连接;`client_id` 参数废弃,连接身份以 claims 中的 `uuid` 为准。
-- 缓解措施(面试可讲):Access 短效期 15 分钟限制了 query 泄露的时间窗口;访问日志不记录 `/wss` 的 query;全链路 wss 加密。
+- 缓解措施(可复述的防护设计):Access 短效期 15 分钟限制了 query 泄露的时间窗口;访问日志不记录 `/wss` 的 query;全链路 wss 加密。
 - 连接期间不重复校验过期:长连接的生命周期由连接本身管理,断线重连时用新 Access 重新握手;服务端收到用户被禁用 / 全量登出事件时主动断开该连接。
 - 断开时更新 `last_offline_at`。
 - 消息帧格式沿用现状(JSON,`type` 区分文本 / 文件 / 通话信令),投递语义见 [`messaging.md`](messaging.md)。
