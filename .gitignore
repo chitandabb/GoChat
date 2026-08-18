@@ -49,3 +49,13 @@ cmd/**/*_backend
 # 调试 / 工具产物
 tmp/
 web/chat-server/.codex-preview/
+
+# 运行/压测日志(根目录积压 130MB+ 调试产物,整体忽略)
+logs/
+
+# 根目录学习/辅助文档与外部参考快照(不属于项目代码,防止误提交)
+/MISSION.md
+/NOTES.md
+/PROJECT_LEARNING_PLAN.md
+/RESOURCES.md
+/reference/
