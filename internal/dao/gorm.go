@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"go.uber.org/zap"
 
 	"gochat/internal/config"
 	"gochat/internal/model"
@@ -122,8 +122,8 @@ func dedupTelephone(db *gorm.DB) {
 	// 迁移前先删除旧索引，避免 AutoMigrate 报 Duplicate key name。
 	var legacyCount int64
 	if err := db.Raw(
-		"SELECT COUNT(*) FROM information_schema.statistics "+
-			"WHERE table_schema = DATABASE() AND table_name = 'user_info' "+
+		"SELECT COUNT(*) FROM information_schema.statistics " +
+			"WHERE table_schema = DATABASE() AND table_name = 'user_info' " +
 			"AND index_name = 'idx_user_info_telephone' AND non_unique = 1",
 	).Scan(&legacyCount).Error; err != nil {
 		zlog.Error("检查旧手机号索引失败: " + err.Error())
