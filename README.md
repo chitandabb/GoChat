@@ -1,6 +1,6 @@
 # 分布式部署的仿微信项目GoChat
 
-> **本项目目前只在[知识星球](https://programmercarl.com/other/kstar.html)答疑并维护**。
+> **开源项目,Issue 与 PR 欢迎。技术设计、压测数据与部署方式见本文档及 [`docs/`](docs/README.md)。**
 
 这次发布一个非常硬核的Go项目，分布式部署的仿微信项目：GoChat
 
@@ -78,49 +78,13 @@ WebSocket 为前端和客户端之间建立了实时、双向的通信连接。
 更多视频展示 可以在项目专栏的【项目展示以及测试】观看
 ![image](https://file1.kamacoder.com/i/web/2025-08-18_12-29-34.jpg)
 
-## GoChat项目精讲
+## 项目精讲与文档
 
-该项目的专栏是[知识星球](https://programmercarl.com/other/kstar.html)录友专享的。
+系统设计、架构决策与实现说明见 [`docs/design/`](docs/design/)(api/messaging/database/system-architecture 等),压测环境与实测数据见 [`docs/notes/压测报告.md`](docs/notes/压测报告.md),演示与部署见 [`docs/notes/演示与部署说明.md`](docs/notes/演示与部署说明.md)。
 
-项目专栏依然是将 「简历写法」给大家列出来了，大家学完就可以参考这个来写简历：
+一键启动环境:依赖较多,建议直接使用 Docker Compose(见"本地开发与环境切换"),无需手动安装 MySQL / Redis / Kafka。
 
-![image](https://file1.kamacoder.com/i/web/20250407103128.png)
-
-做完该项目，面试中大概率会有哪些面试问题，以及如何回答，也列出好了。
-
-面试问题，都是星球录友那这个项目面试遇到的实际问题：
-
-![image](https://file1.kamacoder.com/i/web/20250407103212.png)
-
-专栏中的项目面试题都掌握的话，这个项目在面试中基本没问题。
-
-很多录友在做项目的时候，把项目运行起来 就是第一大难点！
-
-本项目运行起来 需要依赖的环境很多，所以我给大家准备的 自动化环境配置脚本， **项目运行环境，一键配置！ 不需要大家去处理环境问题了**：
-
-![image](https://file1.kamacoder.com/i/web/2025-08-18_12-32-49.jpg)
-
-环境自动配置脚本执行中：
-
-![image](https://file1.kamacoder.com/i/web/2025-08-18_12-33-20.jpg)
-
-如果大家想进一步优化这个项目，这里给出可以深挖的点：
-
-![image](https://file1.kamacoder.com/i/web/2025-08-18_12-33-47.jpg)
-
-
-
-后端开发详细设计：包含 建表、日志库、架构、业务开发、群聊、后台管理、消息管理、管理员、文件上传下载、音视频通话等等：
-
-![image](https://file1.kamacoder.com/i/web/2025-08-18_12-43-10.jpg)
-
-![image](https://file1.kamacoder.com/i/web/2025-08-18_12-43-42.jpg)
-
-前端开发详细设计：
-
-![image](https://file1.kamacoder.com/i/web/2025-08-18_12-44-10.jpg)
-
-![image](https://file1.kamacoder.com/i/web/2025-08-18_12-44-34.jpg)
+> **项目文档索引**:[`docs/README.md`](docs/README.md)。
 
 ## 工程现状(2026-08)
 
@@ -240,14 +204,11 @@ go run .\cmd\gochat
 - `WebRTC` 依赖安全上下文，本地如果要测音视频能力，请把前端 `DEV_SERVER_HTTPS=true`，并同时提供 `DEV_SERVER_HTTPS_CERT` 和 `DEV_SERVER_HTTPS_KEY`
 - 本次环境切换改造没有处理短信注册/短信登录本身的可用性，短信相关配置为空时这部分能力仍需你自己按部署环境补齐
 
-## 答疑
+## 答疑与贡献
 
-本项目在[知识星球](https://programmercarl.com/other/kstar.html)里为 文字专栏形式，大家不用担心，看不懂，星球里每个项目有专属答疑群，任何问题都可以在群里问，都会得到解答：
+技术问题欢迎提 Issue;提交代码前请先通过 `go build ./...` 与 `npm run build`,并补充对应压测/测试证据。
 
-![](https://file1.kamacoder.com/i/web/2025-09-26_11-30-13.jpg)
+## 获取方式
 
-
-## 获取本项目专栏
-
-**本文档仅为星球内部专享，大家可以加入[知识星球](./kstar.md)里获取，在星球置顶一**
+完整文档与源码见本仓库 [`docs/`](docs/README.md)。
 
