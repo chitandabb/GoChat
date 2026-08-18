@@ -609,6 +609,9 @@ func scenarioSlow(wsAddr string, normalCount, burstPerMsg int) {
 			}
 			normalConns[idx] = conn
 			go conn.readLoop(func(data []byte) {
+				if !isBusinessFrame(data) {
+					return
+				}
 				atomic.AddInt64(&delivered, 1)
 			}, func() { atomic.AddInt64(&closedNormal, 1) })
 		}(i)

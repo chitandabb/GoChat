@@ -1,6 +1,7 @@
 package https_server
 
 import (
+	"net/url"
 	"os"
 	"strings"
 
@@ -30,7 +31,7 @@ func init() {
 	// 双 Token 方案的 Refresh Cookie 需要跨域携带（withCredentials），
 	// 因此必须显式允许来源（不能用 *）+ AllowCredentials。
 	corsConfig := cors.DefaultConfig()
-	corsConfig.AllowOrigins = corsOrigins()
+	corsConfig.AllowOriginFunc = corsAllowOrigin()
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
 	corsConfig.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
 	corsConfig.AllowCredentials = true
@@ -154,7 +155,27 @@ func registerRoutes(ge *gin.Engine) {
 	ge.GET("/wss", v1.WsLogin)
 }
 
-// corsOrigins 返回 CORS 允许来源。
+// corsAllowOrigin 返回 CORS 来源判定函数。
+// 允许：显式配置的 GOCHAT_CORS_ORIGINS（逗号分隔）命中；或开发前端来源
+// （http/https + 8080 端口，兼容 localhost / 127.0.0.1 / 局域网 IP 访问 dev server）。
+// 与 chat 包 WS 握手的 originAllowed 规则保持一致。
+func corsAllowOrigin() func(origin string) bool {
+	explicit := corsOrigins()
+	return func(origin string) bool {
+		for _, allowed := range explicit {
+			if origin == allowed {
+				return true
+			}
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		return parsed.Port() == "8080" && (parsed.Scheme == "http" || parsed.Scheme == "https")
+	}
+}
+
+// corsOrigins 返回显式允许的 CORS 来源。
 // 允许通过 GOCHAT_CORS_ORIGINS 覆盖（逗号分隔），默认覆盖本地前端开发地址。
 func corsOrigins() []string {
 	raw := os.Getenv("GOCHAT_CORS_ORIGINS")
