@@ -80,9 +80,14 @@ router.beforeEach((to, from, next) => {
       return;
     }
     next("/login");
-  } else {
-    next();
+    return;
   }
+  // 管理后台前端守卫（后端仍有 AdminMiddleware 兜底）
+  if (to.path === "/manager" && store.state.userInfo.is_admin != 1) {
+    next("/chat/sessionlist");
+    return;
+  }
+  next();
 });
 
 export default router;

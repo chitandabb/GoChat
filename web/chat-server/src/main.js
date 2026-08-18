@@ -8,6 +8,7 @@ import '@/assets/css/theme.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import axios from 'axios'
 import { refreshAccessToken } from './utils/auth'
+import { bindStore } from './utils/ws'
 // 引入'https://webrtc.github.io/adapter/adapter-latest.js'
 // import 'https://webrtc.github.io/adapter/adapter-latest.js'
 // import '@/assets/css/font.css'
@@ -71,6 +72,7 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 // 启动前先尝试用 Refresh Cookie 静默恢复会话（刷新页面后保持登录态），
 // 恢复成功后再挂载，避免路由守卫误判为未登录。
 async function bootstrap() {
+  bindStore(store)
   if (!store.state.accessToken) {
     try {
       await refreshAccessToken()

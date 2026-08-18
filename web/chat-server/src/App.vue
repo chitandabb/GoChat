@@ -3,11 +3,14 @@
 </template>
 
 <script>
-import { onMounted } from "vue";
+import { onMounted, watch } from "vue";
 import { useStore } from "vuex";
 import axios from "axios";
+import { ElMessage } from "element-plus";
 import { logout } from "./utils/auth";
 import { connectSocket } from "./utils/ws";
+import { on } from "./utils/messageBus";
+import { initNotify, resetNotify } from "./utils/notify";
 export default {
   name: "App",
   setup() {
@@ -31,8 +34,34 @@ export default {
       }
     };
 
+    // 登录态就绪后：建立 WS 连接 + 启动全局提醒（覆盖刷新恢复和登录页登录两种路径）
+    watch(
+      () => store.getters.isLoggedIn,
+      (loggedIn) => {
+        if (loggedIn) {
+          initNotify();
+          if (!store.state.socket) {
+            connectSocket(store);
+          }
+        } else {
+          resetNotify();
+        }
+      },
+      { immediate: true }
+    );
+
+    // WS 重连前刷新登录态失败：Refresh Cookie 已失效，回登录页
+    on("auth:expired", async () => {
+      ElMessage.error("登录已过期，请重新登录");
+      await logout({ silent: true });
+      if (store.getters.isLoggedIn) {
+        store.commit("clearAccessToken");
+        store.commit("cleanUserInfo");
+      }
+    });
+
     onMounted(async () => {
-      // 无 Access Token（含静默续期失败）时不建立连接，路由守卫负责跳登录页
+      // 无 Access Token（含静默续期失败）时不拉用户信息，路由守卫负责跳登录页
       if (!store.state.accessToken) {
         return;
       }
@@ -46,7 +75,6 @@ export default {
         ElMessage.error("账号被封禁，退出登录");
         return;
       }
-      connectSocket(store);
     });
   },
 };

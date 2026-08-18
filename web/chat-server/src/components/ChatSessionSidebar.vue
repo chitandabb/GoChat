@@ -28,10 +28,28 @@
             <el-menu-item
               v-for="user in filteredUserSessionList"
               :key="user.user_id"
+              :class="{ 'is-active': store.state.currentChatId === user.user_id }"
               @click="handleToChatUser(user)"
             >
-              <img :src="user.avatar" class="sessionlist-avatar" />
-              {{ user.user_name }}
+              <div class="session-item">
+                <el-badge
+                  :value="unreadOf(user.user_id)"
+                  :hidden="unreadOf(user.user_id) <= 0"
+                  :max="99"
+                  class="session-unread"
+                >
+                  <img :src="user.avatar" class="sessionlist-avatar" />
+                </el-badge>
+                <div class="session-item-main">
+                  <div class="session-item-name">
+                    {{ user.user_name }}
+                    <span v-if="user.shadow" class="session-item-tag">新</span>
+                  </div>
+                  <div class="session-item-preview">
+                    {{ user.lastMessage || "暂无消息" }}
+                  </div>
+                </div>
+              </div>
             </el-menu-item>
             <el-menu-item
               v-if="!filteredUserSessionList.length"
@@ -54,10 +72,25 @@
             <el-menu-item
               v-for="group in filteredGroupSessionList"
               :key="group.group_id"
+              :class="{ 'is-active': store.state.currentChatId === group.group_id }"
               @click="handleToChatGroup(group)"
             >
-              <img :src="group.avatar" class="sessionlist-avatar" />
-              {{ group.group_name }}
+              <div class="session-item">
+                <el-badge
+                  :value="unreadOf(group.group_id)"
+                  :hidden="unreadOf(group.group_id) <= 0"
+                  :max="99"
+                  class="session-unread"
+                >
+                  <img :src="group.avatar" class="sessionlist-avatar" />
+                </el-badge>
+                <div class="session-item-main">
+                  <div class="session-item-name">{{ group.group_name }}</div>
+                  <div class="session-item-preview">
+                    {{ group.lastMessage || "暂无消息" }}
+                  </div>
+                </div>
+              </div>
             </el-menu-item>
             <el-menu-item
               v-if="!filteredGroupSessionList.length"
@@ -74,10 +107,11 @@
 </template>
 
 <script>
-import { computed, onMounted, reactive, toRefs } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, toRefs } from "vue";
 import { useRouter } from "vue-router";
 import { useStore } from "vuex";
 import axios from "axios";
+import { on, sessionKeyOf } from "@/utils/messageBus";
 
 export default {
   name: "ChatSessionSidebar",
@@ -92,6 +126,8 @@ export default {
       userSessionList: [],
       groupSessionList: [],
     });
+
+    const unreadOf = (sessionKey) => store.state.unreadMap[sessionKey] || 0;
 
     const normalizeAvatarList = (list = []) =>
       list.map((item) => {
@@ -134,7 +170,14 @@ export default {
         store.state.apiUrl + "/session/getUserSessionList",
         data.ownListReq
       );
-      data.userSessionList = normalizeAvatarList(rsp.data.data || []);
+      const fresh = normalizeAvatarList(rsp.data.data || []);
+      // 重拉时保留本地维护的最近消息预览（后端会话列表无该字段）
+      data.userSessionList = fresh.map((item) => {
+        const old = data.userSessionList.find(
+          (u) => u.user_id === item.user_id
+        );
+        return old && old.lastMessage ? { ...item, lastMessage: old.lastMessage } : item;
+      });
     };
 
     const fetchGroupSessionList = async () => {
@@ -143,15 +186,123 @@ export default {
         store.state.apiUrl + "/session/getGroupSessionList",
         data.ownListReq
       );
-      data.groupSessionList = normalizeAvatarList(rsp.data.data || []);
+      const fresh = normalizeAvatarList(rsp.data.data || []);
+      data.groupSessionList = fresh.map((item) => {
+        const old = data.groupSessionList.find(
+          (g) => g.group_id === item.group_id
+        );
+        return old && old.lastMessage ? { ...item, lastMessage: old.lastMessage } : item;
+      });
     };
 
+    let refreshTimer = null;
+    let intervalTimer = null;
     const preloadSessionLists = async () => {
       try {
         await Promise.all([fetchUserSessionList(), fetchGroupSessionList()]);
       } catch (error) {
         console.error(error);
       }
+    };
+    // 多个事件连续触发时合并成一次重拉
+    const scheduleRefresh = () => {
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+      refreshTimer = setTimeout(preloadSessionLists, 300);
+    };
+    // 兜底自动刷新：60s 定时 + 页面重新可见时刷新，避免长期挂机漏掉新会话
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        scheduleRefresh();
+      }
+    };
+    const startAutoRefresh = () => {
+      stopAutoRefresh();
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener("focus", handleVisibilityChange);
+      intervalTimer = setInterval(() => {
+        if (document.visibilityState === "visible") {
+          scheduleRefresh();
+        }
+      }, 60 * 1000);
+    };
+    const stopAutoRefresh = () => {
+      if (intervalTimer) {
+        clearInterval(intervalTimer);
+        intervalTimer = null;
+      }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleVisibilityChange);
+    };
+
+    // 消息预览文案
+    const previewOf = (message) => {
+      if (message.type === 2) {
+        const fileType = message.file_type || "";
+        if (fileType.startsWith("image/")) {
+          return "[图片]";
+        }
+        if (fileType.startsWith("video/")) {
+          return "[视频]";
+        }
+        if (fileType.startsWith("audio/")) {
+          return "[语音]";
+        }
+        return "[文件] " + (message.file_name || "");
+      }
+      return message.content || "";
+    };
+
+    // 实时收消息：更新最近消息、置顶排序；单聊未知发送者补“影子会话”
+    const handleChatMessage = (message) => {
+      const myId = store.state.userInfo.uuid;
+      if (!myId) {
+        return;
+      }
+      const sessionKey = sessionKeyOf(message, myId);
+      if (!sessionKey) {
+        return;
+      }
+      const isMine = message.send_id === myId;
+      const preview = previewOf(message);
+      if (sessionKey[0] === "G") {
+        const index = data.groupSessionList.findIndex(
+          (g) => g.group_id === sessionKey
+        );
+        if (index === -1) {
+          return;
+        }
+        const item = data.groupSessionList.splice(index, 1)[0];
+        item.lastMessage = (isMine ? "" : message.send_name + "：") + preview;
+        data.groupSessionList.unshift(item);
+        return;
+      }
+      const index = data.userSessionList.findIndex(
+        (u) => u.user_id === sessionKey
+      );
+      if (index >= 0) {
+        const item = data.userSessionList.splice(index, 1)[0];
+        item.lastMessage = preview;
+        data.userSessionList.unshift(item);
+        return;
+      }
+      if (isMine) {
+        // 自己发出的回显，理论上会话已存在；缺失时等下一次重拉兜底
+        return;
+      }
+      let avatar = message.send_avatar || "";
+      if (avatar && !avatar.startsWith("http")) {
+        avatar = store.state.backendUrl + avatar;
+      }
+      data.userSessionList.unshift({
+        user_id: sessionKey,
+        user_name: message.send_name || sessionKey,
+        avatar,
+        lastMessage: preview,
+        // 影子会话：后端会话在进入聊天页 openSession 后才真正创建
+        shadow: true,
+      });
     };
 
     const handleToChatUser = (user) => {
@@ -162,14 +313,32 @@ export default {
       router.push("/chat/" + group.group_id);
     };
 
+    const offChatMessage = on("chat-message", handleChatMessage);
+    const offWsConnected = on("ws:connected", scheduleRefresh);
+    const offSessionChanged = on("session-list-changed", scheduleRefresh);
+
     onMounted(() => {
       preloadSessionLists();
+      startAutoRefresh();
+    });
+
+    onBeforeUnmount(() => {
+      offChatMessage();
+      offWsConnected();
+      offSessionChanged();
+      stopAutoRefresh();
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+        refreshTimer = null;
+      }
     });
 
     return {
       ...toRefs(data),
+      store,
       filteredUserSessionList,
       filteredGroupSessionList,
+      unreadOf,
       handleToChatUser,
       handleToChatGroup,
       preloadSessionLists,
@@ -224,8 +393,9 @@ export default {
 }
 
 :deep(.el-menu-item) {
-  height: 44px;
+  height: 58px;
   margin-bottom: 4px;
+  padding: 0 10px 0 12px !important;
   border-radius: 14px;
   background: transparent;
   color: var(--go-text);
@@ -270,12 +440,55 @@ export default {
   font-weight: 700;
 }
 
+.session-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .sessionlist-avatar {
-  width: 32px;
-  height: 32px;
-  margin-right: 12px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   object-fit: cover;
+  display: block;
+}
+
+.session-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.session-item-name {
+  color: var(--go-text-strong);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-item-tag {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: rgba(245, 108, 108, 0.12);
+  color: #f56c6c;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.session-item-preview {
+  color: var(--go-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 :deep(.el-menu-item.menu-empty-item) {

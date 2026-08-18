@@ -35,9 +35,15 @@
           :class="{ 'is-active': isRouteActive('/chat/contactlist') }"
           @click="handleToContactList"
         >
-          <el-icon>
-            <User />
-          </el-icon>
+          <el-badge
+            :value="newContactCount"
+            :hidden="newContactCount <= 0"
+            :max="99"
+          >
+            <el-icon>
+              <User />
+            </el-icon>
+          </el-badge>
         </button>
       </el-tooltip>
     </div>
@@ -90,9 +96,8 @@
 <script>
 import { useRoute, useRouter } from "vue-router";
 import { useStore } from "vuex";
-import { ElMessage } from "element-plus";
-import { reactive, toRefs } from "vue";
-import axios from "axios";
+import { computed, reactive, toRefs } from "vue";
+import { logout as logoutUtil } from "@/utils/auth";
 export default {
   name: "NavigationModal",
   setup() {
@@ -102,6 +107,7 @@ export default {
     const data = reactive({
       userInfo: store.state.userInfo,
     });
+    const newContactCount = computed(() => store.state.newContactCount);
     const isRouteActive = (pathPrefix) => {
       if (pathPrefix === "/chat/") {
         return route.path.startsWith("/chat/") && route.path !== "/chat/contactlist" && route.path !== "/chat/owninfo";
@@ -118,24 +124,11 @@ export default {
     };
 
     const handleToManager = () => {
-      console.log(data.userInfo);
       router.push("/manager");
     };
-    const logout = async () => {
-      store.commit("cleanUserInfo");
-      const req = {
-        owner_id: data.userInfo.uuid,
-      };
-      const rsp = await axios.post(
-        store.state.apiUrl + "/user/wsLogout",
-        req
-      );
-      if (rsp.data.code == 0) {
-        router.push("/login");
-        ElMessage.success(rsp.data.message);
-      } else {
-        ElMessage.error(rsp.data.message);
-      }
+    // 完整登出：撤销 Refresh Token、断开 WS、清理本地登录态
+    const logout = () => {
+      logoutUtil({ silent: false });
     };
     const handleToOwnInfo = () => {
       router.push("/chat/owninfo");
@@ -143,6 +136,7 @@ export default {
     return {
       ...toRefs(data),
       router,
+      newContactCount,
       handleToContactList,
       handleToSessionList,
       handleToOwnInfo,

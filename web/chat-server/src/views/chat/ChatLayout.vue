@@ -21,6 +21,8 @@
         </el-container>
       </el-container>
     </div>
+    <!-- 全局来电组件：任何聊天页面都能收到/发起通话 -->
+    <CallOverlay />
   </div>
 </template>
 
@@ -30,6 +32,7 @@ import { useRoute } from "vue-router";
 import NavigationModal from "@/components/NavigationModal.vue";
 import ContactListModal from "@/components/ContactListModal.vue";
 import ChatSessionSidebar from "@/components/ChatSessionSidebar.vue";
+import CallOverlay from "@/components/CallOverlay.vue";
 
 export default {
   name: "ChatLayout",
@@ -37,6 +40,7 @@ export default {
     NavigationModal,
     ContactListModal,
     ChatSessionSidebar,
+    CallOverlay,
   },
   setup() {
     const route = useRoute();
