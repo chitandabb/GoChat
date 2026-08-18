@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
 	"gochat/internal/dao"
 	"gochat/internal/dto/request"
 	"gochat/internal/dto/respond"
@@ -16,7 +17,6 @@ import (
 	"gochat/pkg/enum/user_info/user_status_enum"
 	"gochat/pkg/util/random"
 	"gochat/pkg/zlog"
-	"go.uber.org/zap"
 	"regexp"
 	"strconv"
 	"strings"
@@ -328,6 +328,18 @@ func (u *userInfoService) UpdateUserInfo(updateReq request.UpdateUserInfoRequest
 	if res := dao.GormDB.Save(&user); res.Error != nil {
 		zlog.Error(res.Error.Error())
 		return apperr.SystemError(res.Error)
+	}
+	// Cache-Aside：资料变更后失效相关读缓存，避免自己/对方读到旧昵称、旧头像。
+	//   会话列表缓存 key 是会话 owner 维度，自己改资料会影响"所有同我有会话的人"的
+	//   列表展示（昵称/头像），无法只删个别 key → 低频操作直接清前缀，量级可控。
+	if err := myredis.DelKeysWithPattern("user_info_" + updateReq.Uuid); err != nil {
+		zlog.Error(err.Error())
+	}
+	if err := myredis.DelKeysWithPattern("session_list_"); err != nil {
+		zlog.Error(err.Error())
+	}
+	if err := myredis.DelKeysWithPattern("group_session_list_"); err != nil {
+		zlog.Error(err.Error())
 	}
 	return nil
 }

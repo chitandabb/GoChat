@@ -237,7 +237,7 @@ func (g *groupInfoService) LeaveGroup(userId string, groupId string) error {
 	if err := myredis.DelKeysWithPattern("group_session_list_" + userId); err != nil {
 		zlog.Error(err.Error())
 	}
-	if err := myredis.DelKeysWithPattern("my_joined_group_list_ " + userId); err != nil {
+	if err := myredis.DelKeysWithPattern("my_joined_group_list_" + userId); err != nil {
 		zlog.Error(err.Error())
 	}
 	return nil
@@ -288,12 +288,12 @@ func (g *groupInfoService) DismissGroup(ownerId, groupId string) error {
 
 	var contactApplys []model.ContactApply
 	if res := dao.GormDB.Model(&contactApplys).Where("contact_id = ?", groupId).Find(&contactApplys); res.Error != nil {
-		if res.Error != gorm.ErrRecordNotFound {
-			zlog.Info(res.Error.Error())
-			return nil
+		if errors.Is(res.Error, gorm.ErrRecordNotFound) {
+			zlog.Info("该群没有申请记录")
+		} else {
+			zlog.Error(res.Error.Error())
+			return apperr.SystemError(res.Error)
 		}
-		zlog.Error(res.Error.Error())
-		return apperr.SystemError(res.Error)
 	}
 	for _, contactApply := range contactApplys {
 		if res := dao.GormDB.Model(&contactApply).Update("deleted_at", deletedAt); res.Error != nil {
@@ -459,11 +459,11 @@ func (g *groupInfoService) EnterGroupDirectly(ownerId, contactId string) error {
 		return apperr.SystemError(res.Error)
 	}
 
-	// 3. 清理群会话和已加入群列表缓存，让新成员能看到最新状态。
-	if err := myredis.DelKeysWithPattern("group_session_list_" + ownerId); err != nil {
+	// 3. 清理新成员的会话与已加入群列表缓存（键是用户维度），让新成员能看到最新状态。
+	if err := myredis.DelKeysWithPattern("group_session_list_" + contactId); err != nil {
 		zlog.Error(err.Error())
 	}
-	if err := myredis.DelKeysWithPattern("my_joined_group_list_" + ownerId); err != nil {
+	if err := myredis.DelKeysWithPattern("my_joined_group_list_" + contactId); err != nil {
 		zlog.Error(err.Error())
 	}
 	return nil
@@ -536,6 +536,15 @@ func (g *groupInfoService) UpdateGroupInfo(req request.UpdateGroupInfoRequest) e
 			zlog.Error(res.Error.Error())
 			return apperr.SystemError(res.Error)
 		}
+	}
+
+	// Cache-Aside：群资料（名称/头像）变更后，失效群详情缓存与各成员的群会话列表缓存，
+	// 避免成员侧仍显示旧群名/旧头像。
+	if err := myredis.DelKeysWithPattern("group_info_" + req.Uuid); err != nil {
+		zlog.Error(err.Error())
+	}
+	if err := myredis.DelKeysWithPattern("group_session_list_"); err != nil {
+		zlog.Error(err.Error())
 	}
 	return nil
 }

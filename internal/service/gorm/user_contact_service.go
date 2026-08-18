@@ -247,7 +247,11 @@ func (u *userContactService) DeleteContact(ownerId, contactId string) error {
 		zlog.Error(res.Error.Error())
 		return apperr.SystemError(res.Error)
 	}
+	// 删除联系人影响双方的好友列表缓存（ownerId 与 contactId 各有一份列表）
 	if err := myredis.DelKeysWithPattern("contact_user_list_" + ownerId); err != nil {
+		zlog.Error(err.Error())
+	}
+	if err := myredis.DelKeysWithPattern("contact_user_list_" + contactId); err != nil {
 		zlog.Error(err.Error())
 	}
 	return nil
@@ -433,9 +437,14 @@ func (u *userContactService) GetAddGroupList(groupId string) ([]respond.AddGroup
 	return rsp, nil
 }
 
-// PassContactApply 通过联系人申请
-func (u *userContactService) PassContactApply(ownerId string, contactId string) error {
-	// ownerId 如果是用户的话就是登录用户，如果是群聊的话就是群聊id
+// PassContactApply 通过联系人/加群申请。
+// operatorId 为已认证操作者，ownerId 为被申请方（用户 uuid 或群 id，G 开头）。
+// 用户场景只允许处理"本人收到的申请"；群场景只允许群主审核，防止越权。
+func (u *userContactService) PassContactApply(operatorId, ownerId, contactId string) error {
+	if err := u.checkContactApplyOwner(operatorId, ownerId); err != nil {
+		return err
+	}
+
 	var contactApply model.ContactApply
 	if res := dao.GormDB.Where("contact_id = ? AND user_id = ?", ownerId, contactId).First(&contactApply); res.Error != nil {
 		zlog.Error(res.Error.Error())
@@ -479,7 +488,11 @@ func (u *userContactService) PassContactApply(ownerId string, contactId string) 
 			zlog.Error(res.Error.Error())
 			return apperr.SystemError(res.Error)
 		}
+		// 好友关系建立后，双方的好友列表缓存都要失效（各自缓存一份自己的列表）
 		if err := myredis.DelKeysWithPattern("contact_user_list_" + ownerId); err != nil {
+			zlog.Error(err.Error())
+		}
+		if err := myredis.DelKeysWithPattern("contact_user_list_" + contactId); err != nil {
 			zlog.Error(err.Error())
 		}
 		return nil
@@ -522,16 +535,50 @@ func (u *userContactService) PassContactApply(ownerId string, contactId string) 
 			zlog.Error(res.Error.Error())
 			return apperr.SystemError(res.Error)
 		}
-		if err := myredis.DelKeysWithPattern("my_joined_group_list_" + ownerId); err != nil {
+		// 入群后，申请者（contactId）的"已加入群列表"缓存需要失效；用户维度缓存 key。
+		if err := myredis.DelKeysWithPattern("my_joined_group_list_" + contactId); err != nil {
+			zlog.Error(err.Error())
+		}
+		// 群主侧的群会话列表也失效（会话列表含群名/头像，保持一致性）
+		if err := myredis.DelKeysWithPattern("group_session_list_" + group.OwnerId); err != nil {
 			zlog.Error(err.Error())
 		}
 		return nil
 	}
 }
 
-// RefuseContactApply 拒绝联系人申请
-func (u *userContactService) RefuseContactApply(ownerId string, contactId string) error {
-	// ownerId 如果是用户的话就是登录用户，如果是群聊的话就是群聊id
+// checkContactApplyOwner 校验操作者是否有权处理该申请：
+//   - 用户申请：owner 必须是操作者本人；
+//   - 加群申请：owner 为群 id，操作者必须是该群群主（仅群主可审核）。
+func (u *userContactService) checkContactApplyOwner(operatorId, ownerId string) error {
+	if ownerId == "" {
+		return apperr.BadRequest("参数错误")
+	}
+	if ownerId[0] == 'U' {
+		if ownerId != operatorId {
+			return apperr.Forbidden("无权限处理该申请")
+		}
+		return nil
+	}
+	if ownerId[0] == 'G' {
+		var group model.GroupInfo
+		if res := dao.GormDB.Where("uuid = ?", ownerId).First(&group); res.Error != nil {
+			zlog.Error(res.Error.Error())
+			return apperr.SystemError(res.Error)
+		}
+		if group.OwnerId != operatorId {
+			return apperr.Forbidden("仅群主可处理加群申请")
+		}
+		return nil
+	}
+	return apperr.Biz("用户/群聊不存在")
+}
+
+// RefuseContactApply 拒绝联系人/加群申请（身份校验同 PassContactApply）。
+func (u *userContactService) RefuseContactApply(operatorId, ownerId, contactId string) error {
+	if err := u.checkContactApplyOwner(operatorId, ownerId); err != nil {
+		return err
+	}
 	var contactApply model.ContactApply
 	if res := dao.GormDB.Where("contact_id = ? AND user_id = ?", ownerId, contactId).First(&contactApply); res.Error != nil {
 		zlog.Error(res.Error.Error())
@@ -608,8 +655,11 @@ func (u *userContactService) CancelBlackContact(ownerId string, contactId string
 	return nil
 }
 
-// BlackApply 拉黑申请
-func (u *userContactService) BlackApply(ownerId string, contactId string) error {
+// BlackApply 拉黑申请（身份校验同 PassContactApply）
+func (u *userContactService) BlackApply(operatorId, ownerId, contactId string) error {
+	if err := u.checkContactApplyOwner(operatorId, ownerId); err != nil {
+		return err
+	}
 	var contactApply model.ContactApply
 	if res := dao.GormDB.Where("contact_id = ? AND user_id = ?", ownerId, contactId).First(&contactApply); res.Error != nil {
 		zlog.Error(res.Error.Error())

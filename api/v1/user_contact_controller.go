@@ -77,26 +77,28 @@ func GetNewContactList(c *gin.Context) {
 	OK(c, data)
 }
 
-// PassContactApply 通过联系人申请
+// PassContactApply 通过联系人/加群申请。
+// owner_id 由请求体携带：好友申请为本人 uuid(auto=AuthUUID 校验)，加群申请为群 id（G 开头）。
+// actorId（已认证用户）由 service 做身份校验，防止替他人/越权处理申请。
 func PassContactApply(c *gin.Context) {
 	var passContactApplyReq request.PassContactApplyRequest
 	if !BindJSON(c, &passContactApplyReq) {
 		return
 	}
-	if err := gorm.UserContactService.PassContactApply(AuthUUID(c), passContactApplyReq.ContactId); err != nil {
+	if err := gorm.UserContactService.PassContactApply(AuthUUID(c), passContactApplyReq.OwnerId, passContactApplyReq.ContactId); err != nil {
 		c.Error(err)
 		return
 	}
 	OK(c, nil)
 }
 
-// RefuseContactApply 拒绝联系人申请
+// RefuseContactApply 拒绝联系人/加群申请，语义同 PassContactApply。
 func RefuseContactApply(c *gin.Context) {
 	var passContactApplyReq request.PassContactApplyRequest
 	if !BindJSON(c, &passContactApplyReq) {
 		return
 	}
-	if err := gorm.UserContactService.RefuseContactApply(AuthUUID(c), passContactApplyReq.ContactId); err != nil {
+	if err := gorm.UserContactService.RefuseContactApply(AuthUUID(c), passContactApplyReq.OwnerId, passContactApplyReq.ContactId); err != nil {
 		c.Error(err)
 		return
 	}
@@ -143,13 +145,13 @@ func GetAddGroupList(c *gin.Context) {
 	OK(c, data)
 }
 
-// BlackApply 拉黑申请
+// BlackApply 拉黑申请，语义同 PassContactApply（group 场景 owner_id 为群 id）。
 func BlackApply(c *gin.Context) {
 	var req request.BlackApplyRequest
 	if !BindJSON(c, &req) {
 		return
 	}
-	if err := gorm.UserContactService.BlackApply(AuthUUID(c), req.ContactId); err != nil {
+	if err := gorm.UserContactService.BlackApply(AuthUUID(c), req.OwnerId, req.ContactId); err != nil {
 		c.Error(err)
 		return
 	}
