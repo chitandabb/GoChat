@@ -34,20 +34,22 @@ func GetGroupMessageList(c *gin.Context) {
 	OK(c, rsp)
 }
 
-// UploadAvatar 上传头像
+// UploadAvatar 上传头像，返回落盘后的相对路径（/static/avatars/<新文件名>）
 func UploadAvatar(c *gin.Context) {
-	if err := gorm.MessageService.UploadAvatar(c); err != nil {
+	path, err := gorm.MessageService.UploadAvatar(c)
+	if err != nil {
 		c.Error(err)
 		return
 	}
-	OK(c, nil)
+	OK(c, path)
 }
 
-// UploadFile 上传文件
+// UploadFile 上传文件，返回落盘后的相对路径（/static/files/<新文件名>）
 func UploadFile(c *gin.Context) {
-	if err := gorm.MessageService.UploadFile(c); err != nil {
+	path, err := gorm.MessageService.UploadFile(c)
+	if err != nil {
 		c.Error(err)
 		return
 	}
-	OK(c, nil)
+	OK(c, path)
 }
