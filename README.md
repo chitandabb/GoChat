@@ -11,7 +11,7 @@
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
 [![Kafka](https://img.shields.io/badge/Kafka-3.7-231F20?logo=apachekafka&logoColor=white)](https://kafka.apache.org/)
 [![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
-[![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 开发语言:Go + Vue 3 ｜ 运行形态:Docker Compose 一键启动 ｜ 状态:前后端真实联调可用,压测证据入仓
 
@@ -122,6 +122,6 @@ npm run serve                                           # 前端 :8080
 
 ## 📄 许可证
 
-仓库沿用上游基线项目的 **GPLv3** 许可证(见 [LICENSE](LICENSE))。
+本项目基于 **MIT 许可证**开放（见 [LICENSE](LICENSE)）。
 
 > 演示环境使用本地构造的测试账号与数据,不含真实客户信息;仓库内不保留真实密钥(短信 AK / JWT 密钥均经 `.env` 或环境变量注入,`.env` 与本地配置不入版本库)。
