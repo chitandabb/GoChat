@@ -1,214 +1,127 @@
-# 分布式部署的仿微信项目GoChat
+# GoChat · 高并发仿微信即时通讯系统
 
-> **开源项目,Issue 与 PR 欢迎。技术设计、压测数据与部署方式见本文档及 [`docs/`](docs/README.md)。**
+<div align="center">
 
-这次发布一个非常硬核的Go项目，分布式部署的仿微信项目：GoChat
+> **GoChat** 是一个可一键运行的单实例即时通讯系统:双 Token 认证、WebSocket 长连接反压、Redis 缓存优化、channel / Kafka 双模式消息路由,全部能力有设计文档、有实现、有压测数据背书。
 
-越来越多的大厂开始在核心业务中采用 Go 语言，例如在云计算、分布式系统、微服务架构等领域，Go 语言都有着出色的表现。
+[![Go](https://img.shields.io/badge/Go-1.20-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Gin](https://img.shields.io/badge/Gin-1.10-00ADD8?logo=go)](https://github.com/gin-gonic/gin)
+[![GORM](https://img.shields.io/badge/GORM-1.25-2F8FBB?logo=go)](https://gorm.io/)
+[![WebSocket](https://img.shields.io/badge/WebSocket-Gorilla-4E9A51?logo=socketdotio&logoColor=white)](https://github.com/gorilla/websocket)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
+[![Kafka](https://img.shields.io/badge/Kafka-3.7-231F20?logo=apachekafka&logoColor=white)](https://kafka.apache.org/)
+[![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-其实我从24年就开始规划Go的项目，现在这个项目终于打磨好了。
+开发语言:Go + Vue 3 ｜ 运行形态:Docker Compose 一键启动 ｜ 状态:前后端真实联调可用,压测证据入仓
 
-这个项目整个前后端代码加起来有1.5w行（前后端分离），是一个功能非常庞大的项目。
+</div>
 
-如果对前后端有了解的同学，主要是理解业务流程，每天抽5h，应该在一个月左右能完全掌握这个项目。
+---
 
-如果对go、vue都不太熟悉，对前后端这种api调用方式不太熟悉，可能还需要提前大概去走一遍go和vue，具体时间得看你学基础的耗时，建议通过ai来快速学习。
+## ✨ 核心能力(每条都有出处)
 
-在开发这个项目，工时大约在200h-300h左右（**相当于24小时都在工作，干了十天**）。
+- **双 Token 认证与连接安全**:15min Access(JWT)+ 7d Refresh(Redis 白名单),续期旋转 + 重放检测(旧 token 复用即撤销全部登录态)、bcrypt 哈希与存量明文懒升级、HTTP / WebSocket 统一鉴权、禁用用户即时撤销并断开连接。设计见 [`docs/design/api.md`](docs/design/api.md)。
+- **WebSocket 长连接治理与反压**:读写分离 goroutine + 有界队列(全局 Transmit 100 + 每连接 100),下行非阻塞写 + 慢客户端判定断开,重连经会话拉取补齐;先落库后推送,消息 uuid 幂等,状态批量落库。设计见 [`docs/design/messaging.md`](docs/design/messaging.md)。
+- **Redis 缓存优化**:SCAN 安全批量失效 + Pipeline 管道化删除 + TTL ±20% 抖动防雪崩;高频接口实测命中率与响应提升见 [`docs/notes/压测报告.md`](docs/notes/压测报告.md)。
+- **channel / Kafka 双模式消息路由**:默认进程内 channel,一行配置切换 Kafka 异步路由(分区键 = receiveId 保序、acks 可配置、消费组重复消费幂等去重),共享同一套投递语义。
+- **完整 IM 业务面**:单聊 / 群聊(含审核、禁言、管理员)、联系人体系(申请 / 同意 / 拉黑)、会话列表、多类型消息(文本 / 文件 / 音视频信令)、管理后台、短信验证码注册与登录(阿里云,开发模式自动降级)。
 
-## 涉及技术面广
+## 🏗️ 技术架构
 
-此项目构建了一个**全面且复杂的即时通讯系统**，前后端融合了广泛的技术体系，深入研究各个技术模块，能让人对即时通讯领域形成系统而完整的认知。
+```mermaid
+flowchart LR
+  subgraph Web[Vue 3 SPA :8080]
+    UI[Element Plus]
+  end
+  subgraph API[Go GoChat 进程 :8000]
+    GIN[Gin 路由 /api/v1]
+    AUTH[双 Token 中间件]
+    CS[Chat Server WS /wss]
+    SS[Static /static]
+  end
+  subgraph Infra[基础设施]
+    DB[(MySQL 8)]
+    RD[(Redis 7)]
+    KF{{Kafka 3.7 · 可选}}
+    SMS[阿里云短信]
+  end
 
-下面将详细阐述各个技术板块及其具体实现功能：
+  UI -->|HTTPS / WSS| GIN
+  UI --> AUTH
+  UI --> CS
+  GIN --> DB
+  GIN --> RD
+  GIN --> SMS
+  CS -->|channel 或 Kafka| KF
+  CS --> DB
+```
 
-1、 **后台开发者管理**
+### 技术栈
 
-这一模块赋予后台开发者强大的管理权限，主要用于对用户群聊和用户角色进行管控。
+| 层 | 选型 |
+| --- | --- |
+| 后端 | Go 1.20 · Gin 1.10 · GORM 1.25 · go-redis/v8 · gorilla/websocket · kafka-go · zap |
+| 数据 | MySQL 8 · Redis 7 · Kafka 3.7(可选,`messageMode=kafka`) |
+| 认证 | JWT 双 Token · bcrypt · Redis 白名单 · HTTP/WS 统一中间件 |
+| 短信 | 阿里云 Dysmsapi,无 AK 时自动降级开发模式(验证码写 Redis + 日志打印) |
+| 前端 | Vue 3 · Element Plus · Vuex · axios · vue-cli 5 |
 
-开发者可以对用户群聊执行禁用、启用和删除操作，以确保群聊的正常秩序和合规性。同时，开发者还能根据实际需求，将普通用户设置为管理员，协助进行系统管理。
+## 🚀 快速开始(看完就能跑)
 
-2、**类似聊天软件的联系人体系**
+需要:Docker Desktop(已含 MySQL / Redis 镜像拉取),或本机 Go 1.20+ / Node 18+。
 
-该体系模拟了常见聊天软件的联系人管理功能，为用户提供了丰富的社交互动选项。
+```powershell
+# 一键启动全部服务(mysql + redis + backend + frontend)
+docker compose up -d --build
 
-用户可以自由添加或删除联系人，还能对联系人进行拉黑操作。
+# 前端     http://localhost:8080
+# 后端     http://localhost:8000
+# 默认账号 13600000000 / 123456(管理员 18032353211 / 123456)
+```
 
-当用户想要添加新联系人时，可以发起申请，对方则有权选择同意或拒绝该申请。
-
-3、 **单聊与群聊**
-
-单聊和群聊是即时通讯系统的核心功能之一，其实现依赖于后端的聊天服务器。
-
-无论是单聊消息还是群聊消息，都会被发送到后端服务器，由服务器负责将消息准确无误地转发给相应的接收方。
-
-4、 **多种消息类型的上传和下载（文本、文件、视频**）
-
-系统支持多种类型的消息交互，包括文本、文件和视频。用户可以方便地上传和下载这些不同类型的消息，满足多样化的沟通需求。
-
-5、 **Kafka**
-
-Kafka 在项目中扮演着消息传输的重要角色。
-
-它作为一个高效的消息队列系统，负责将客户端（client）发送的消息转发到服务器（server），确保消息的可靠传输和处理。
-
-6、 **语音视频通话**
-
-语音视频通话功能为用户提供了更加直观和实时的沟通方式。
-
-用户可以发起通话邀请，对方可以选择接受或拒绝邀请。在通话过程中，任何一方都可以随时挂断通话，结束交流。
-
-7、 **WebSocket**
-
-WebSocket 为前端和客户端之间建立了实时、双向的通信连接。
-
-它负责接收前端发送给客户端的消息，并将客户端的消息传递给服务器，实现了消息的高效传输和即时响应。
-
-通过参与这个项目，对上述每个技术点进行深入钻研，开发者可以全面了解即时通讯系统的架构、原理和实现细节，从而在该领域积累丰富的经验和技能。
-
-## 系统展示
-
-单聊：
-
-以下我只放了部分视频演示，该项目的各个部分都是视频演示，共计三十多个视频展示：
-
-
-![image](https://file1.kamacoder.com/i/web/2025-08-18_12-28-59.jpg)
-
-更多视频展示 可以在项目专栏的【项目展示以及测试】观看
-![image](https://file1.kamacoder.com/i/web/2025-08-18_12-29-34.jpg)
-
-## 项目精讲与文档
-
-系统设计、架构决策与实现说明见 [`docs/design/`](docs/design/)(api/messaging/database/system-architecture 等),压测环境与实测数据见 [`docs/notes/压测报告.md`](docs/notes/压测报告.md),演示与部署见 [`docs/notes/演示与部署说明.md`](docs/notes/演示与部署说明.md)。
-
-一键启动环境:依赖较多,建议直接使用 Docker Compose(见"本地开发与环境切换"),无需手动安装 MySQL / Redis / Kafka。
-
-> **项目文档索引**:[`docs/README.md`](docs/README.md)。
-
-## 工程现状(2026-08)
-
-- **鉴权**:JWT 双 Token(Access 15min + Refresh 7d Redis 白名单,续期旋转 + 重放检测)、bcrypt、HTTP/WS 统一鉴权,详见 [`docs/design/api.md`](docs/design/api.md)。
-- **消息管道**:先落库后推送、下行非阻塞推送 + 慢客户端治理、心跳、消息幂等、状态批量落库;channel / Kafka 双模式共享同一套分发语义,详见 [`docs/design/messaging.md`](docs/design/messaging.md)。
-- **压测**:自研客户端 `go run ./bench`(conn / chat / group / slow / api 五场景),实测 3000 并发连接、消息 P99=19.5ms、缓存命中率 99.75%、接口 P95 4.8→2.2ms,完整报告见 [`docs/notes/压测报告.md`](docs/notes/压测报告.md)。
-- **Kafka 模式**:`docker compose up -d kafka` 后以 `CONFIG_FILE=configs/config.kafka.toml` 启动(见 [`configs/config.kafka.toml`](configs/config.kafka.toml))。
-- 全量文档索引见 [`docs/README.md`](docs/README.md)。
-
-## 本地开发与环境切换
-
-当前仓库已经支持按 `base + env + 显式文件 + 环境变量覆盖` 的顺序加载配置：
-
-1. `configs/config.toml`
-2. `configs/config.<APP_ENV>.toml`
-3. `CONFIG_FILE` 指定的额外配置文件
-4. 运行时环境变量覆盖
-
-### 本地开发
-
-后端默认使用 `HTTP/WS`，适合先把主链路跑通：
+本机直接跑后端 + 已装依赖:
 
 ```powershell
 $env:APP_ENV = "dev"
-go run .\cmd\gochat
-```
+go run ./cmd/gochat                                     # API + WS :8000
 
-前端默认读取 [web/chat-server/.env.development](web/chat-server/.env.development)，对应本地后端地址 `http://localhost:8000` 和 `ws://localhost:8000`：
-
-```powershell
-cd .\web\chat-server
+cd web/chat-server
 npm install
-npm run serve
+npm run serve                                           # 前端 :8080
 ```
 
-### Docker Compose 一键启动
+- 前端按页面 hostname 自动推导 API / WS 地址:局域网 / 手机访问 `http://<服务器IP>:8080` 即可直连同 IP 的 8000,无需改配置。
+- 短信验证码默认开发模式:验证码写入 Redis 并在后端日志打印(`docker logs gochat-backend`),注册 / 短信登录无需真实短信通道;配置真实 AK 后置 `GOCHAT_SMS_DEV_MODE=false` 走阿里云。
+- 切换 Kafka 模式:`docker compose up -d kafka` 后以 `CONFIG_FILE=configs/config.kafka.toml` 启动后端。
 
-现在仓库里已经补了一套和 `CVAT` 类似的容器编排，可以一次性把前端、后端、`MySQL`、`Redis` 起在一起：
+完整命令与配置说明见 [`docs/notes/演示与部署说明.md`](docs/notes/演示与部署说明.md)。
 
-```powershell
-docker compose up -d --build
-```
+## 🧪 压测与证据(实测入仓,不冒充生产 SLA)
 
-默认会启动这些服务：
+自研 Go 压测客户端 `bench/`(conn / chat / group / slow / api 五场景),全部数字有可复现方法与固定环境记录,详见 [`docs/notes/压测报告.md`](docs/notes/压测报告.md)。
 
-- `gochat-frontend`：前端页面，访问 `http://localhost:8080`
-- `gochat-backend`：后端接口，访问 `http://localhost:8000`
-- `gochat-mysql`：MySQL 8，映射到 `localhost:3306`
-- `gochat-redis`：Redis 7，映射到 `localhost:6380`（避开其他项目占用的 6379）
-- `gochat-seed`：一次性初始化测试用户，执行完成后自动退出
+| 项 | 实测结果 |
+| --- | --- |
+| 长连接规模 | 3000 并发连接 100% 保持(5000 可建连),600s soak 零掉线、goroutine 恒定、堆内存无单调增长 |
+| 消息端到端延迟 | channel 模式容量内 **P99 = 19.5ms**;Kafka 模式容量内 100 对 P99 = 71ms |
+| 群聊风暴 | 100 人 × 30 条广播(预期扇出 30000):**每成员 100% 送达、零丢失、零误断** |
+| 慢客户端治理 | 0.3–0.5s 阈值断开,注入慢客户端时 50 个正常客户端 100% 送达、0 异常断开 |
+| Redis 缓存 | 高频接口实测命中率 **99.75%**;接口 P95 由 4.8ms 降至 2.2ms(-54%);DB 查询量降低 90%+ |
+| Kafka 消费上限 | 批量落库后单实例 **≥1000 msg/s**(约 7 倍于修复前 147 msg/s),200 msg/s 下 P99 316ms 且零积压 |
+| 消费幂等 | Kafka 重复消费 / 重放 13438 条消息,DB **零新增行**(SETNX + uuid 去重) |
+| 崩溃恢复 | 消费中 kill 重启 **10000/10000 零丢失**;MySQL / Redis / Kafka 依次停机均零丢失、恢复自愈 |
 
-默认测试账号：
+## 📚 文档
 
-- 手机号：`13600000000`
-- 密码：`123456`
+- [文档总览](docs/README.md) — 架构、设计、决策、压测索引
+- [系统架构](docs/design/system-architecture.md) · [消息管道](docs/design/messaging.md) · [API 与鉴权](docs/design/api.md)
+- [数据库设计](docs/design/database.md) · [领域模型](docs/design/domain-and-state-machine.md) · [交付计划](docs/design/delivery-plan.md)
+- [压测报告](docs/notes/压测报告.md) · [修复日志](docs/notes/修复日志_P0_P1.md) · [演示与部署说明](docs/notes/演示与部署说明.md)
+- [OpenAPI 3 接口清单](docs/gochat-openapi3.json)
 
-容器编排默认使用 [configs/config.docker.toml](configs/config.docker.toml)。
+## 📄 许可证
 
-如果你不想让前端构建时写死成 `localhost:8000`，可以在启动前覆盖：
+仓库沿用上游基线项目的 **GPLv3** 许可证(见 [LICENSE](LICENSE))。
 
-```powershell
-$env:FRONTEND_API_BASE_URL = "http://your-host:8000"
-$env:FRONTEND_WS_BASE_URL = "ws://your-host:8000"
-docker compose up -d --build
-```
-
-如果你希望把容器数据落到宿主机固定目录，而不是 Docker named volume，可以在仓库根目录放一个本地 `.env`，覆盖这些变量：
-
-```powershell
-GOCHAT_MYSQL_DATA=D:/develop/docker_workspace/gochat/mysql
-GOCHAT_REDIS_DATA=D:/develop/docker_workspace/gochat/redis
-GOCHAT_BACKEND_LOGS=D:/develop/docker_workspace/gochat/logs
-GOCHAT_BACKEND_AVATARS=D:/develop/docker_workspace/gochat/avatars
-GOCHAT_BACKEND_FILES=D:/develop/docker_workspace/gochat/files
-```
-
-仓库里附了示例文件 [`.env.compose.example`](</D:/develop/project/go-project/GoChat/.env.compose.example>)。这些变量不设置时，compose 会继续回退到原来的 named volume。
-
-查看状态：
-
-```powershell
-docker compose ps
-docker compose logs -f backend
-docker compose logs -f frontend
-```
-
-停止并清理：
-
-```powershell
-docker compose down
-```
-
-如果连数据卷也一起清掉：
-
-```powershell
-docker compose down -v
-```
-
-当前 compose 默认仍然使用 `channel` 模式，因此 **不依赖 Kafka**。如果你后面想切到 Kafka，再单独补 broker 编排更合适。
-
-### 生产部署
-
-推荐让 `Nginx` 或其他反向代理终止 `TLS`，Go 服务继续监听内网 `HTTP`。可以参考 [configs/config.prod.example.toml](configs/config.prod.example.toml) 复制出自己的 `configs/config.prod.toml`，再通过环境变量注入密码、短信密钥和证书路径。
-
-```powershell
-$env:APP_ENV = "prod"
-$env:GOCHAT_DB_PASSWORD = "replace-me"
-go run .\cmd\gochat
-```
-
-前端生产构建默认读取 [web/chat-server/.env.production](web/chat-server/.env.production)。如果 `VUE_APP_API_BASE_URL` 和 `VUE_APP_WS_BASE_URL` 为空，会回退到当前页面所在的同源地址。
-
-### 配置建议
-
-- 放在配置文件里的内容：监听地址、端口、静态目录、日志路径、功能开关、数据库网络模式
-- 放在环境变量里的内容：数据库密码、短信密钥、生产证书路径
-- `WebRTC` 依赖安全上下文，本地如果要测音视频能力，请把前端 `DEV_SERVER_HTTPS=true`，并同时提供 `DEV_SERVER_HTTPS_CERT` 和 `DEV_SERVER_HTTPS_KEY`
-- 本次环境切换改造没有处理短信注册/短信登录本身的可用性，短信相关配置为空时这部分能力仍需你自己按部署环境补齐
-
-## 答疑与贡献
-
-技术问题欢迎提 Issue;提交代码前请先通过 `go build ./...` 与 `npm run build`,并补充对应压测/测试证据。
-
-## 获取方式
-
-完整文档与源码见本仓库 [`docs/`](docs/README.md)。
-
+> 演示环境使用本地构造的测试账号与数据,不含真实客户信息;仓库内不保留真实密钥(短信 AK / JWT 密钥均经 `.env` 或环境变量注入,`.env` 与本地配置不入版本库)。
