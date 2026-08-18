@@ -38,6 +38,9 @@ codeType = 1
 caseAuthPolicy = 1
 returnVerifyCode = false
 autoRetry = 1
+# 演示/联调可在环境配置里开启开发模式验证码（写 Redis + 日志打印），不依赖真实短信通道；
+# 默认 false：本机配置了真实 AK/SK/签名/模板时走阿里云；配置缺失时自动降级开发模式。
+devMode = false
 
 [logConfig]
 logPath = "./logs/gochat.log"

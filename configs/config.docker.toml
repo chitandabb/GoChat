@@ -38,6 +38,8 @@ codeType = 1
 caseAuthPolicy = 1
 returnVerifyCode = false
 autoRetry = 1
+# Docker 演示默认开发模式（日志打印验证码）；配了真实 AK 且置 false 才走阿里云
+devMode = true
 
 [logConfig]
 logPath = "./logs/gochat.log"

@@ -2,11 +2,15 @@ package sms
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"gochat/internal/config"
+	"gochat/internal/service/redis"
 	"gochat/pkg/apperr"
+	"gochat/pkg/util/random"
 	"gochat/pkg/zlog"
 
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
@@ -17,6 +21,69 @@ import (
 )
 
 var smsClient *dypnsapi20170525.Client
+
+// devCodeKeyPrefix 开发模式验证码的 Redis key 前缀（未配置阿里云短信时兜底，见 sendDevVerificationCode）。
+const devCodeKeyPrefix = "sms_dev_code:"
+
+// smsConfigured 判断是否配置了可用的阿里云短信（AK/SK + 签名 + 模板都齐全才走真实发送）。
+func smsConfigured(authCfg config.AuthCodeConfig) bool {
+	return strings.TrimSpace(authCfg.AccessKeyID) != "" &&
+		strings.TrimSpace(authCfg.AccessKeySecret) != "" &&
+		strings.TrimSpace(authCfg.SignName) != "" &&
+		strings.TrimSpace(authCfg.TemplateCode) != ""
+}
+
+// useDevMode 是否使用开发模式验证码：
+// 1. 显式配置 DevMode=true 时（演示/联调）强制开发模式，即使 AK 齐全；
+// 2. 否则仅当阿里云配置缺失时自动降级，保证未接入短信也能登录/注册。
+func useDevMode(authCfg config.AuthCodeConfig) bool {
+	return authCfg.DevMode || !smsConfigured(authCfg)
+}
+
+// devCodeKey 返回开发模式验证码在 Redis 中的 key。
+func devCodeKey(telephone string) string {
+	return devCodeKeyPrefix + telephone
+}
+
+// sendDevVerificationCode 开发模式发送验证码：
+// 仅当阿里云短信配置缺失时启用——生成 6 位验证码写入 Redis（TTL 同 validTime），
+// 并在服务端日志打印，便于本地演示注册/短信登录；不调用真实短信通道。
+// 一旦配置齐全，本函数不会被调用，行为与原来完全一致。
+func sendDevVerificationCode(telephone string, authCfg config.AuthCodeConfig) error {
+	code := fmt.Sprintf("%06d", random.GetRandomInt(6))
+	if err := redis.SetKeyEx(devCodeKey(telephone), code, time.Duration(authCfg.ValidTime)*time.Second); err != nil {
+		zlog.Error(err.Error())
+		return apperr.SystemError(err)
+	}
+	// 开发模式仅用于本地演示：验证码打到服务端日志，由演示者查日志获取。
+	zlog.Warn("【开发模式】短信验证码（未配置阿里云短信时生效，生产环境请配置 AccessKey）",
+		zap.String("telephone", maskTelephone(telephone)),
+		zap.String("code", code),
+	)
+	return nil
+}
+
+// checkDevVerificationCode 开发模式校验验证码：Redis 有该手机的开发验证码则本地比对，
+// 命中后删除（一次性使用）。返回 (是否走开发校验, error)。
+func checkDevVerificationCode(telephone, verifyCode string) (bool, error) {
+	value, err := redis.GetKey(devCodeKey(telephone))
+	if err != nil {
+		zlog.Error(err.Error())
+		return false, apperr.SystemError(err)
+	}
+	if value == "" {
+		// 没有开发验证码，走真实阿里云校验
+		return false, nil
+	}
+	if value != verifyCode {
+		return true, apperr.Biz("验证码错误")
+	}
+	if err := redis.DelKeys(devCodeKey(telephone)); err != nil {
+		zlog.Error(err.Error())
+		return true, apperr.SystemError(err)
+	}
+	return true, nil
+}
 
 // createClient 使用 AK&SK 初始化号码认证客户端。
 func createClient() (result *dypnsapi20170525.Client, err error) {
@@ -40,14 +107,20 @@ func createClient() (result *dypnsapi20170525.Client, err error) {
 	return smsClient, err
 }
 
-// SendVerificationCode 发送短信验证码。验证码由阿里云生成，不再由本地 Redis 保存。
+// SendVerificationCode 发送短信验证码。
+// 开发模式（DevMode 显式开启，或阿里云配置缺失时自动降级）：验证码写 Redis + 服务端日志打印；
+// 配置齐全且 DevMode=false 时走真实阿里云发送，行为不变。
 func SendVerificationCode(telephone string) error {
+	authCfg := config.GetConfig().AuthCodeConfig
+	if useDevMode(authCfg) {
+		return sendDevVerificationCode(telephone, authCfg)
+	}
+
 	client, err := createClient()
 	if err != nil {
 		return apperr.SystemError(err)
 	}
 
-	authCfg := config.GetConfig().AuthCodeConfig
 	if err := validateAuthCodeConfig(authCfg); err != nil {
 		return err
 	}
@@ -119,14 +192,24 @@ func SendVerificationCode(telephone string) error {
 	return nil
 }
 
-// CheckVerificationCode 校验短信验证码。校验逻辑由阿里云负责。
+// CheckVerificationCode 校验短信验证码。
+// 开发模式（Redis 中存在开发验证码）下本地比对；否则由阿里云校验。
 func CheckVerificationCode(telephone string, verifyCode string) error {
+	if dev, err := checkDevVerificationCode(telephone, verifyCode); dev || err != nil {
+		return err
+	}
+
+	authCfg := config.GetConfig().AuthCodeConfig
+	// 开发模式校验后（Redis 无开发验证码）且配置缺失：明确报错而不是试图调用阿里云
+	if useDevMode(authCfg) {
+		return apperr.Biz("验证码无效或已过期，请重新获取")
+	}
+
 	client, err := createClient()
 	if err != nil {
 		return apperr.SystemError(err)
 	}
 
-	authCfg := config.GetConfig().AuthCodeConfig
 	if err := validateAuthCodeConfig(authCfg); err != nil {
 		return err
 	}

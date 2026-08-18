@@ -62,6 +62,10 @@ type AuthCodeConfig struct {
 	CaseAuthPolicy   int    `toml:"caseAuthPolicy"`
 	ReturnVerifyCode bool   `toml:"returnVerifyCode"`
 	AutoRetry        int    `toml:"autoRetry"`
+	// DevMode 强制启用开发模式验证码（写 Redis + 日志打印）：
+	// 演示/联调时即使配置了阿里云 AK，也优先走本地验证码，避免依赖真实短信通道。
+	// 生产环境保持 false（默认），配置齐全时走真实阿里云。
+	DevMode bool `toml:"devMode"`
 }
 
 type LogConfig struct {
@@ -348,6 +352,7 @@ func applyEnvOverrides(cfg *Config, lookupEnv func(string) (string, bool)) error
 	boolTargets := []boolTarget{
 		{envName: "GOCHAT_TLS_ENABLED", target: &cfg.ServerConfig.TLSEnabled},
 		{envName: "GOCHAT_SSL_REDIRECT", target: &cfg.ServerConfig.SSLRedirect},
+		{envName: "GOCHAT_SMS_DEV_MODE", target: &cfg.AuthCodeConfig.DevMode},
 	}
 
 	for _, item := range boolTargets {
