@@ -13,13 +13,13 @@
 [![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-开发语言:Go + Vue 3 ｜ 运行形态:Docker Compose 一键启动 ｜ 状态:前后端真实联调可用,压测证据入仓
+开发语言:Go + Vue 3 ｜ 运行形态:Docker Compose 一键启动
 
 </div>
 
 ---
 
-## ✨ 核心能力(每条都有出处)
+## ✨ 核心能力
 
 - **双 Token 认证与连接安全**:15min Access(JWT)+ 7d Refresh(Redis 白名单),续期旋转 + 重放检测(旧 token 复用即撤销全部登录态)、bcrypt 哈希与存量明文懒升级、HTTP / WebSocket 统一鉴权、禁用用户即时撤销并断开连接。设计见 [`docs/design/api.md`](docs/design/api.md)。
 - **WebSocket 长连接治理与反压**:读写分离 goroutine + 有界队列(全局 Transmit 100 + 每连接 100),下行非阻塞写 + 慢客户端判定断开,重连经会话拉取补齐;先落库后推送,消息 uuid 幂等,状态批量落库。设计见 [`docs/design/messaging.md`](docs/design/messaging.md)。
@@ -67,7 +67,7 @@ flowchart LR
 | 短信 | 阿里云 Dysmsapi,无 AK 时自动降级开发模式(验证码写 Redis + 日志打印) |
 | 前端 | Vue 3 · Element Plus · Vuex · axios · vue-cli 5 |
 
-## 🚀 快速开始(看完就能跑)
+## 🚀 快速开始
 
 需要:Docker Desktop(已含 MySQL / Redis 镜像拉取),或本机 Go 1.20+ / Node 18+。
 
@@ -99,7 +99,7 @@ npm run serve                                           # 前端 :8080
 
 ## 🧪 压测与证据(实测入仓,不冒充生产 SLA)
 
-自研 Go 压测客户端 `bench/`(conn / chat / group / slow / api 五场景),全部数字有可复现方法与固定环境记录,详见 [`docs/notes/压测报告.md`](docs/notes/压测报告.md)。
+小型 Go 压测客户端 `bench/`(conn / chat / group / slow / api 五场景),全部数字有可复现方法与固定环境记录,详见 [`docs/notes/压测报告.md`](docs/notes/压测报告.md)。
 
 | 项 | 实测结果 |
 | --- | --- |
