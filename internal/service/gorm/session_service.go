@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
+	"time"
+
 	"github.com/go-redis/redis/v8"
 	"gochat/internal/dao"
 	"gochat/internal/dto/request"
@@ -14,11 +18,11 @@ import (
 	"gochat/pkg/constants"
 	"gochat/pkg/enum/contact/contact_status_enum"
 	"gochat/pkg/enum/group_info/group_status_enum"
+	"gochat/pkg/enum/message/message_type_enum"
 	"gochat/pkg/enum/user_info/user_status_enum"
 	"gochat/pkg/util/random"
 	"gochat/pkg/zlog"
 	"gorm.io/gorm"
-	"time"
 )
 
 type sessionService struct {
@@ -139,6 +143,98 @@ func (s *sessionService) OpenSession(req request.OpenSessionRequest) (string, er
 	return session.Uuid, nil
 }
 
+// latestSessionMessages 查一批会话各自最近一条消息(session_id 有索引)。
+// 按 id 倒序扫、每个会话只留首条,拿齐即停;查询失败不阻塞列表,只是没有预览。
+func latestSessionMessages(sessionIds []string) map[string]model.Message {
+	latest := make(map[string]model.Message, len(sessionIds))
+	if len(sessionIds) == 0 {
+		return latest
+	}
+	var msgs []model.Message
+	if res := dao.GormDB.
+		Select("id", "session_id", "type", "content", "file_type", "file_name", "send_id", "send_name").
+		Where("session_id IN ?", sessionIds).
+		Order("id DESC").
+		Find(&msgs); res.Error != nil {
+		zlog.Error(res.Error.Error())
+		return latest
+	}
+	for _, m := range msgs {
+		if _, ok := latest[m.SessionId]; !ok {
+			latest[m.SessionId] = m
+		}
+		if len(latest) == len(sessionIds) {
+			break
+		}
+	}
+	return latest
+}
+
+// sessionPreviewText 与前端实时预览的规则保持一致:文件按 MIME 折叠成占位文案,
+// 群聊里非本人发送的消息带“发送者：”前缀。
+func sessionPreviewText(msg model.Message, ownerId string, isGroup bool) string {
+	var text string
+	switch msg.Type {
+	case message_type_enum.File:
+		switch {
+		case strings.HasPrefix(msg.FileType, "image/"):
+			text = "[图片]"
+		case strings.HasPrefix(msg.FileType, "video/"):
+			text = "[视频]"
+		case strings.HasPrefix(msg.FileType, "audio/"):
+			text = "[语音]"
+		default:
+			text = "[文件] " + msg.FileName
+		}
+	default:
+		text = msg.Content
+	}
+	if isGroup && msg.SendId != ownerId {
+		text = msg.SendName + "：" + text
+	}
+	return text
+}
+
+// fillUserSessionPreviews 回填单聊会话的最近消息预览,并按最近消息重排
+// (无消息的会话保持 created_at 倒序垫底)。预览不进缓存:缓存命中路径同样现查,
+// 新消息后下一次拉取即可见,无需失效缓存。
+func fillUserSessionPreviews(list []respond.UserSessionListRespond, ownerId string) {
+	ids := make([]string, 0, len(list))
+	for i := range list {
+		ids = append(ids, list[i].SessionId)
+	}
+	latest := latestSessionMessages(ids)
+	rank := make(map[string]int64, len(list))
+	for i := range list {
+		if msg, ok := latest[list[i].SessionId]; ok {
+			list[i].LastMessage = sessionPreviewText(msg, ownerId, false)
+			rank[list[i].SessionId] = msg.Id
+		}
+	}
+	sort.SliceStable(list, func(a, b int) bool {
+		return rank[list[a].SessionId] > rank[list[b].SessionId]
+	})
+}
+
+// fillGroupSessionPreviews 同上,群聊版(非本人消息带发送者前缀)。
+func fillGroupSessionPreviews(list []respond.GroupSessionListRespond, ownerId string) {
+	ids := make([]string, 0, len(list))
+	for i := range list {
+		ids = append(ids, list[i].SessionId)
+	}
+	latest := latestSessionMessages(ids)
+	rank := make(map[string]int64, len(list))
+	for i := range list {
+		if msg, ok := latest[list[i].SessionId]; ok {
+			list[i].LastMessage = sessionPreviewText(msg, ownerId, true)
+			rank[list[i].SessionId] = msg.Id
+		}
+	}
+	sort.SliceStable(list, func(a, b int) bool {
+		return rank[list[a].SessionId] > rank[list[b].SessionId]
+	})
+}
+
 // GetUserSessionList 获取用户会话列表（双向：send_id / receive_id 任一端命中即展示，
 // 与 OpenSession 的双向查找配套，避免"复用对方方向会话后自己的列表看不到"）。
 // 会话行里 ReceiveName/Avatar 是接收端视角的信息，反向命中时对端是 SendId，
@@ -198,6 +294,7 @@ func (s *sessionService) GetUserSessionList(ownerId string) ([]respond.UserSessi
 			if err := myredis.SetKeyExJitter("session_list_"+ownerId, string(rspString), time.Minute*constants.REDIS_TIMEOUT); err != nil {
 				zlog.Error(err.Error())
 			}
+			fillUserSessionPreviews(sessionListRsp, ownerId)
 			return sessionListRsp, nil
 		} else {
 			zlog.Error(err.Error())
@@ -208,6 +305,7 @@ func (s *sessionService) GetUserSessionList(ownerId string) ([]respond.UserSessi
 	if err := json.Unmarshal([]byte(rspString), &rsp); err != nil {
 		zlog.Error(err.Error())
 	}
+	fillUserSessionPreviews(rsp, ownerId)
 	return rsp, nil
 }
 
@@ -247,6 +345,7 @@ func (s *sessionService) GetGroupSessionList(ownerId string) ([]respond.GroupSes
 			if err := myredis.SetKeyExJitter("group_session_list_"+ownerId, string(rspString), time.Minute*constants.REDIS_TIMEOUT); err != nil {
 				zlog.Error(err.Error())
 			}
+			fillGroupSessionPreviews(sessionListRsp, ownerId)
 			return sessionListRsp, nil
 		} else {
 			zlog.Error(err.Error())
@@ -257,6 +356,7 @@ func (s *sessionService) GetGroupSessionList(ownerId string) ([]respond.GroupSes
 	if err := json.Unmarshal([]byte(rspString), &rsp); err != nil {
 		zlog.Error(err.Error())
 	}
+	fillGroupSessionPreviews(rsp, ownerId)
 	return rsp, nil
 }
 

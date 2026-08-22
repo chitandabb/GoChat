@@ -360,6 +360,8 @@ func (u *userInfoService) GetUserInfoList(ownerId string) ([]respond.GetUserList
 			Uuid:      user.Uuid,
 			Telephone: user.Telephone,
 			Nickname:  user.Nickname,
+			Email:     user.Email,
+			Avatar:    user.Avatar,
 			Status:    user.Status,
 			IsAdmin:   user.IsAdmin,
 		}
