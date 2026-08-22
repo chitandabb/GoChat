@@ -1786,7 +1786,7 @@ h3 {
 .removegroupmember-modal-quit-btn,
 .modal-quit-btn {
   background: transparent;
-  color: #666;
+  color: var(--go-text-muted);
   padding: 10px;
   border: none;
   cursor: pointer;
@@ -2098,7 +2098,7 @@ h3 {
   justify-content: space-between;
   gap: 10px;
   padding: 8px 0;
-  border-bottom: 1px solid #f1f1f1;
+  border-bottom: 1px solid var(--go-divider);
 }
 
 .addGroup-item:last-child,
@@ -2122,7 +2122,7 @@ h3 {
 
 .action-btn.el-button:hover,
 .removegroupmembers-button.el-button:hover {
-  background: #ebebeb;
+  background: #eef4f0;
   color: var(--go-text);
 }
 

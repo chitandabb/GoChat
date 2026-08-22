@@ -12,7 +12,12 @@
         <p class="auth-card__subtitle">请输入您的账号和密码</p>
       </div>
 
-      <el-form :model="loginData" label-position="top" class="auth-form auth-form--wechat">
+      <el-form
+        :model="loginData"
+        label-position="top"
+        class="auth-form auth-form--wechat"
+        @submit.prevent="handleLogin"
+      >
         <el-form-item
           prop="telephone"
           label="账号"
@@ -52,6 +57,7 @@
 
       <el-button
         type="primary"
+        native-type="submit"
         class="auth-submit-btn auth-submit-btn--lift"
         :loading="loginLoading"
         @click="handleLogin"

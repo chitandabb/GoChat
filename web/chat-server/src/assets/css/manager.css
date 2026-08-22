@@ -1,0 +1,284 @@
+/* 管理后台:与聊天端共用 --go-* 设计令牌,风格对齐仿微信主界面。 */
+
+.manager-header {
+  height: 74px;
+  padding: 0 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--go-divider);
+  background: rgba(248, 250, 248, 0.96);
+}
+
+.manager-header__brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.manager-header__logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 20px;
+  background: linear-gradient(180deg, var(--go-accent) 0%, var(--go-accent-strong) 100%);
+  box-shadow: 0 12px 22px rgba(7, 193, 96, 0.22);
+}
+
+.manager-header__title {
+  color: var(--go-text-strong);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.manager-header__sub {
+  margin-top: 2px;
+  color: var(--go-text-muted);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+}
+
+.manager-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.manager-header__admin {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-right: 16px;
+  border-right: 1px solid var(--go-divider);
+  color: var(--go-text);
+  font-size: 13px;
+}
+
+.manager-btn-icon {
+  margin-right: 6px;
+  font-size: 15px;
+}
+
+/* ---------- 左侧菜单 ---------- */
+
+.manager-aside {
+  width: 216px !important;
+  padding: 18px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #f4f7f4 0%, #eef3ef 100%);
+  border-right: 1px solid rgba(200, 212, 203, 0.76);
+}
+
+.manager-aside__label {
+  padding: 0 10px 4px;
+  color: var(--go-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+
+.manager-menu {
+  width: 100%;
+  border-right: none;
+  background: transparent;
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: var(--go-text);
+  --el-menu-active-color: var(--go-accent-strong);
+  --el-menu-hover-bg-color: #ebf2ee;
+}
+
+.manager-menu > .el-sub-menu > .el-sub-menu__title {
+  height: 44px;
+  margin: 2px 0;
+  border-radius: 12px;
+  color: var(--go-text-strong);
+  font-weight: 600;
+}
+
+.manager-menu > .el-sub-menu > .el-sub-menu__title:hover {
+  background: #ebf2ee;
+}
+
+.manager-menu .el-menu {
+  background: transparent;
+}
+
+.manager-menu .el-menu .el-menu-item {
+  height: 40px;
+  margin: 2px 0 2px 22px;
+  padding-left: 14px !important;
+  border-radius: 11px;
+  font-size: 13.5px;
+  color: var(--go-text);
+}
+
+.manager-menu .el-menu .el-menu-item:hover {
+  background: #ebf2ee;
+}
+
+.manager-menu .el-menu .el-menu-item.is-active {
+  background: var(--go-accent-soft);
+  color: var(--go-accent-strong);
+  font-weight: 600;
+}
+
+.manager-aside__foot {
+  margin-top: auto;
+  padding: 12px 12px 2px;
+  border-top: 1px dashed rgba(116, 128, 120, 0.22);
+  color: var(--go-text-muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+/* ---------- 内容区 ---------- */
+
+.manager-main {
+  padding: 22px 26px 26px !important;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(252, 253, 252, 0.92) 0%, rgba(245, 249, 245, 0.96) 100%);
+}
+
+.manager-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.manager-section-head__title {
+  color: var(--go-text-strong);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.manager-section-head__desc {
+  margin-top: 4px;
+  color: var(--go-text-muted);
+  font-size: 12.5px;
+}
+
+.manager-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--go-border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--go-shadow-soft);
+}
+
+.manager-table-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.manager-table {
+  flex: 1;
+  min-height: 0;
+}
+
+.manager-table-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--go-divider);
+}
+
+.manager-table-bar__count {
+  margin-right: auto;
+  color: var(--go-text-muted);
+  font-size: 12.5px;
+}
+
+.soft-action-btn--danger.el-button,
+.soft-action-btn--danger {
+  color: #cf4433;
+}
+
+.soft-action-btn--danger.el-button:hover,
+.soft-action-btn--danger:hover {
+  border-color: rgba(207, 68, 51, 0.42);
+  background: rgba(207, 68, 51, 0.06);
+  color: #b53729;
+}
+
+/* 用户/群聊列:头像 + 名称 + uuid */
+
+.manager-cell-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.manager-cell-user__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.manager-cell-user__name {
+  color: var(--go-text-strong);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.manager-cell-user__id {
+  color: var(--go-text-soft);
+  font-size: 11.5px;
+}
+
+/* 空态引导 */
+
+.manager-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--go-text-muted);
+}
+
+.manager-empty__icon {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 10px;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--go-accent);
+  font-size: 26px;
+  background: var(--go-accent-soft);
+}
+
+.manager-empty h3 {
+  margin: 0 0 8px;
+  color: #435046;
+  font-size: 19px;
+  font-weight: 650;
+}
+
+.manager-empty p {
+  margin: 0;
+  max-width: 420px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.8;
+}

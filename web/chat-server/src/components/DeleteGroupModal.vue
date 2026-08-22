@@ -1,49 +1,36 @@
 <template>
-  <div style="height: 100%; width: 100%" v-if="isVisible">
-    <el-table
-      :data="deleteGroupTableData"
-      style="width: 100%; height: 90%"
-      @selection-change="selectGroups"
-    >
-      <el-table-column type="selection" width="55" />
-      <el-table-column prop="uuid" label="Uuid" width="200" />
-      <el-table-column
-        prop="name"
-        label="群名称"
-        width="120"
-        show-overflow-tooltip
-      />
-      <el-table-column
-        prop="owner_id"
-        label="群主id"
-        width="200"
-        show-overflow-tooltip
-      />
-      <el-table-column prop="status" label="禁用状态" width="80" >
-        <template #default="scope">
-          <el-button type="default" v-if="scope.row.status == 0"
-            >否</el-button
-          >
-          <el-button type="primary" v-if="scope.row.status == 1"
-            >是</el-button
-          >
-        </template>
-      </el-table-column>
-      <el-table-column label="删除状态" width="100">
-        <template #default="scope">
-          <el-button type="default" v-if="scope.row.is_deleted == false"
-            >正常</el-button
-          >
-          <el-button type="danger" v-if="scope.row.is_deleted == true"
-            >已删除</el-button
-          >
-        </template>
-      </el-table-column>
-    </el-table>
-    <div class="main-able-button-container">
-      <el-button class="soft-action-btn" @click="deleteGroups">
-        删除/全部删除
-      </el-button>
+  <div class="manager-table-pane" v-if="isVisible">
+    <div class="manager-table">
+      <el-table
+        :data="deleteGroupTableData"
+        height="100%"
+        @selection-change="selectGroups"
+      >
+        <el-table-column type="selection" width="46" />
+        <el-table-column label="群聊" min-width="230">
+          <template #default="scope">
+            <div class="manager-cell-user">
+              <el-avatar :size="34" shape="square" :src="avatarOf(scope.row)" />
+              <div class="manager-cell-user__meta">
+                <span class="manager-cell-user__name">{{ scope.row.name }}</span>
+                <span class="manager-cell-user__id">{{ scope.row.uuid }}</span>
+              </div>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="owner_id" label="群主 ID" width="180" />
+        <el-table-column label="状态" width="100" align="center">
+          <template #default="scope">
+            <el-tag v-if="scope.row.is_deleted == true" type="danger" effect="light" round size="small">已删除</el-tag>
+            <el-tag v-else-if="scope.row.status == 1" type="warning" effect="light" round size="small">已禁用</el-tag>
+            <el-tag v-else type="success" effect="light" round size="small">正常</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+    <div class="manager-table-bar">
+      <span class="manager-table-bar__count">已选 {{ uuidList.length }} 项,解散后不可恢复</span>
+      <el-button class="soft-action-btn soft-action-btn--danger" @click="deleteGroups">删除 / 解散选中</el-button>
     </div>
   </div>
 </template>
@@ -52,8 +39,9 @@
 import { onMounted, reactive, toRefs } from 'vue';
 import { useStore } from 'vuex';
 import axios from 'axios';
+import { ElMessage, ElMessageBox } from "element-plus";
 export default {
-  name: "DeleteUserModal",
+  name: "DeleteGroupModal",
   props: {
     isVisible: false,
   },
@@ -74,45 +62,55 @@ export default {
           store.state.apiUrl + "/admin/getGroupInfoList"
         );
         data.deleteGroupTableData = rsp.data.data;
-        console.log(rsp);
       } catch (error) {
-        console.log(error);
+        ElMessage.error("群聊列表加载失败");
       }
+    };
+
+    const avatarOf = (row) => {
+      const avatar = row.avatar || "";
+      return avatar && !avatar.startsWith("http")
+        ? store.state.backendUrl + avatar
+        : avatar;
     };
 
     const selectGroups = (val) => {
       data.uuidList = val.map((item) => item.uuid);
-      console.log(data.uuidList);
     };
 
     const deleteGroups = async () => {
+      if (data.uuidList.length === 0) {
+        ElMessage.warning("请先勾选要解散的群聊");
+        return;
+      }
+      try {
+        await ElMessageBox.confirm(
+          `确定解散选中的 ${data.uuidList.length} 个群聊?解散后不可恢复。`,
+          "解散群聊",
+          { confirmButtonText: "解散", cancelButtonText: "取消", type: "warning" }
+        );
+      } catch (e) {
+        return;
+      }
       try {
         const req = {
           uuid_list: data.uuidList,
         };
-        const rsp = await axios.post(store.state.apiUrl + "/admin/deleteGroups", req);
-        console.log(rsp);
+        await axios.post(store.state.apiUrl + "/admin/deleteGroups", req);
+        ElMessage.success("已解散选中群聊");
         getGroupInfoList();
       } catch (error) {
-        console.log(error);
+        ElMessage.error("操作失败,请重试");
       }
     };
 
     return {
       ...toRefs(data),
       getGroupInfoList,
+      avatarOf,
       selectGroups,
       deleteGroups,
     }
   }
 };
 </script>
-
-<style scoped>
-.main-able-button-container {
-  height: 10%;
-  display: flex;
-  flex-direction: row-reverse;
-  align-items: center;
-}
-</style>

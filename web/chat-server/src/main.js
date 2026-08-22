@@ -13,6 +13,7 @@ import { bindStore } from './utils/ws'
 // import 'https://webrtc.github.io/adapter/adapter-latest.js'
 // import '@/assets/css/font.css'
 import '@/assets/css/chat.css'
+import '@/assets/css/manager.css'
 
 // Refresh Cookie 需要跨域携带（前端 8080 -> 后端 8000），统一开启 credentials。
 axios.defaults.withCredentials = true

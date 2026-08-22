@@ -1,77 +1,53 @@
 <template>
-  <div style="height: 100%; width: 100%" v-if="isVisible">
-    <el-table
-      :data="disableUserTableData"
-      style="width: 100%; height: 90%"
-      @selection-change="selectUsers"
-    >
-      <el-table-column type="selection" width="55" />
-      <el-table-column prop="uuid" label="Uuid" width="200" />
-      <el-table-column
-        prop="nickname"
-        label="昵称"
-        width="120"
-        show-overflow-tooltip
-      />
-      <el-table-column
-        prop="telephone"
-        label="电话"
-        width="120"
-        show-overflow-tooltip
-      />
-      <el-table-column prop="is_admin" label="管理员" width="80" >
-        <template #default="scope">
-          <el-button type="default" v-if="scope.row.is_admin == 0"
-            >否</el-button
-          >
-          <el-button type="primary" v-if="scope.row.is_admin == 1"
-            >是</el-button
-          >
-        </template>
-      </el-table-column>
-      <el-table-column label="删除状态" width="90">
-        <template #default="scope">
-          <el-button type="default" v-if="scope.row.is_deleted == false"
-            >正常</el-button
-          >
-          <el-button type="danger" v-if="scope.row.is_deleted == true"
-            >已删除</el-button
-          >
-        </template>
-      </el-table-column>
-      <el-table-column label="禁用状态" width="90">
-        <template #default="scope">
-          <el-button type="default" v-if="scope.row.status == 0"
-            >正常</el-button
-          >
-          <el-button type="success" v-if="scope.row.status == 1"
-            >禁用</el-button
-          >
-        </template>
-      </el-table-column>
-    </el-table>
-    <div class="main-able-button-container">
-      <el-button
-        class="soft-action-btn main-action-gap"
-        @click="disableUsers"
+  <div class="manager-table-pane" v-if="isVisible">
+    <div class="manager-table">
+      <el-table
+        :data="disableUserTableData"
+        height="100%"
+        @selection-change="selectUsers"
       >
-        禁用/全部禁用
-      </el-button
-      >
-      <el-button class="soft-action-btn" @click="ableUsers">
-        启用/全部启用
-      </el-button
-      >
+        <el-table-column type="selection" width="46" />
+        <el-table-column label="用户" min-width="220">
+          <template #default="scope">
+            <div class="manager-cell-user">
+              <el-avatar :size="34" :src="avatarOf(scope.row)" />
+              <div class="manager-cell-user__meta">
+                <span class="manager-cell-user__name">{{ scope.row.nickname }}</span>
+                <span class="manager-cell-user__id">{{ scope.row.uuid }}</span>
+              </div>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="telephone" label="手机号" width="150" />
+        <el-table-column prop="email" label="邮箱" min-width="200" show-overflow-tooltip />
+        <el-table-column label="角色" width="96" align="center">
+          <template #default="scope">
+            <el-tag v-if="scope.row.is_admin == 1" type="success" effect="light" round size="small">管理员</el-tag>
+            <el-tag v-else type="info" effect="light" round size="small">普通用户</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="账号状态" width="100" align="center">
+          <template #default="scope">
+            <el-tag v-if="scope.row.is_deleted == true" type="danger" effect="light" round size="small">已删除</el-tag>
+            <el-tag v-else-if="scope.row.status == 1" type="warning" effect="light" round size="small">已禁用</el-tag>
+            <el-tag v-else type="success" effect="light" round size="small">正常</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+    <div class="manager-table-bar">
+      <span class="manager-table-bar__count">已选 {{ uuidList.length }} 项</span>
+      <el-button class="soft-action-btn" @click="ableUsers">启用选中</el-button>
+      <el-button class="soft-action-btn soft-action-btn--danger" @click="disableUsers">禁用选中</el-button>
     </div>
   </div>
 </template>
 
 <script>
-import { ElTable } from "element-plus";
 import { onMounted, reactive, toRefs } from "vue";
 import { useStore } from "vuex";
 import axios from "axios";
-import { useRouter } from 'vue-router';
+import { ElMessage } from "element-plus";
 export default {
   name: "DisableUserModal",
   props: {
@@ -79,7 +55,6 @@ export default {
   },
   setup() {
     const store = useStore();
-    const router = useRouter();
     const data = reactive({
       disableUserTableData: [],
       uuidList: [],
@@ -96,51 +71,62 @@ export default {
           store.state.apiUrl + "/admin/getUserInfoList", req
         );
         data.disableUserTableData = rsp.data.data;
-        console.log(rsp);
       } catch (error) {
-        console.log(error);
+        ElMessage.error("用户列表加载失败");
       }
+    };
+
+    const avatarOf = (row) => {
+      const avatar = row.avatar || "";
+      return avatar && !avatar.startsWith("http")
+        ? store.state.backendUrl + avatar
+        : avatar;
     };
 
     const selectUsers = (val) => {
       data.uuidList = val.map((item) => item.uuid);
-      console.log(data.uuidList);
+    };
+
+    const guardSelection = () => {
+      if (data.uuidList.length === 0) {
+        ElMessage.warning("请先勾选要操作的用户");
+        return false;
+      }
+      return true;
     };
 
     const ableUsers = async () => {
+      if (!guardSelection()) return;
       try {
         const req = {
           uuid_list: data.uuidList,
         }
-        const rsp = await axios.post(
-          store.state.apiUrl + "/admin/ableUsers", req);
-        console.log(rsp);
-        // router.go(0);
+        await axios.post(store.state.apiUrl + "/admin/ableUsers", req);
+        ElMessage.success("已启用选中账号");
         getUserList();
       } catch (error) {
-        console.log(error);
+        ElMessage.error("操作失败,请重试");
       }
     };
 
     const disableUsers = async () => {
+      if (!guardSelection()) return;
       try {
         const req = {
           uuid_list: data.uuidList,
         }
-        const rsp = await axios.post(
-          store.state.apiUrl + "/admin/disableUsers", req);
-        console.log(rsp);
-        // router.go(0);
+        await axios.post(store.state.apiUrl + "/admin/disableUsers", req);
+        ElMessage.success("已禁用选中账号");
         getUserList();
       } catch (error) {
-        console.log(error);
+        ElMessage.error("操作失败,请重试");
       }
     }
 
     return {
       ...toRefs(data),
-      router,
       getUserList,
+      avatarOf,
       selectUsers,
       ableUsers,
       disableUsers,
@@ -148,16 +134,3 @@ export default {
   },
 };
 </script>
-
-<style scoped>
-.main-able-button-container {
-  height: 10%;
-  display: flex;
-  flex-direction: row-reverse;
-  align-items: center;
-}
-
-.main-action-gap {
-  margin-left: 12px;
-}
-</style>
