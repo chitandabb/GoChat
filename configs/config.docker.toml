@@ -45,13 +45,17 @@ devMode = true
 logPath = "./logs/gochat.log"
 
 [kafkaConfig]
-messageMode = "channel"
+# docker 部署默认走 Kafka：消息投递与跨实例推送广播都过 broker
+# （宿主机工具连 localhost:29092，见 docker-compose.yml kafka 双监听器）
+messageMode = "kafka"
 hostPort = "kafka:9092"
 loginTopic = "login"
 chatTopic = "chat_message"
+pushTopic = "chat_push"
 logoutTopic = "logout"
-partition = 0
+partition = 1
 timeout = 1
+requiredAcks = "one"
 
 [staticSrcConfig]
 staticAvatarPath = "./static/avatars"
