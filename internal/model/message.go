@@ -21,7 +21,8 @@ type Message struct {
 	SendName   string       `gorm:"column:send_name;type:varchar(20);not null;comment:发送者昵称"`
 	SendAvatar string       `gorm:"column:send_avatar;type:varchar(255);not null;comment:发送者头像"`
 	ReceiveId  string       `gorm:"column:receive_id;index;type:char(20);not null;comment:接受者uuid"`
-	FileType   string       `gorm:"column:file_type;type:char(10);comment:文件类型"`
+	// varchar(20):浏览器 MIME(如 application/pdf)会超过 char(10) 导致写入截断报错。
+	FileType   string       `gorm:"column:file_type;type:varchar(20);comment:文件类型"`
 	FileName   string       `gorm:"column:file_name;type:varchar(50);comment:文件名"`
 	FileSize   string       `gorm:"column:file_size;type:char(20);comment:文件大小"`
 	Status     int8         `gorm:"column:status;not null;comment:状态，0.未发送，1.已发送"`

@@ -30,9 +30,12 @@ vendor/*
 
 *.log
 
+# 用户上传的运行时文件不入库;seed 演示素材除外(cmd/seed 会复制到运行目录)
 static/avatars/*
+!static/avatars/seed
 
 static/files/*
+!static/files/seed
 
 web/chat-server/src/assets/cert/*
 
