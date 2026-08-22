@@ -318,9 +318,12 @@
               class="contactlist-dropdown"
               placement="right"
             >
-              <div class="contactlist-user-item">
-                <img :src="user.avatar" class="contactlist-user-avatar" />
-                {{ user.user_name }}
+              <div class="contact-item">
+                <img :src="user.avatar" class="contact-item__avatar" />
+                <div class="contact-item__main">
+                  <div class="contact-item__name">{{ user.user_name }}</div>
+                  <div class="contact-item__sub">{{ user.user_id }}</div>
+                </div>
               </div>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -363,8 +366,13 @@
             :key="group.group_id"
             @click="handleToChatGroup(group)"
           >
-            <img :src="group.avatar" class="contactlist-avatar" />
-            {{ group.group_name }}
+            <div class="contact-item">
+              <img :src="group.avatar" class="contact-item__avatar" />
+              <div class="contact-item__main">
+                <div class="contact-item__name">{{ group.group_name }}</div>
+                <div class="contact-item__sub">我创建的群聊</div>
+              </div>
+            </div>
           </el-menu-item>
           <el-menu-item
             v-if="!filteredMyGroupList.length"
@@ -396,8 +404,13 @@
             :key="group.group_id"
             @click="handleToChatGroup(group)"
           >
-            <img :src="group.avatar" class="contactlist-avatar" />
-            {{ group.group_name }}
+            <div class="contact-item">
+              <img :src="group.avatar" class="contact-item__avatar" />
+              <div class="contact-item__main">
+                <div class="contact-item__name">{{ group.group_name }}</div>
+                <div class="contact-item__sub">群聊</div>
+              </div>
+            </div>
           </el-menu-item>
           <el-menu-item
             v-if="!filteredMyJoinedGroupList.length"
@@ -1109,19 +1122,24 @@ export default {
   background: transparent;
 }
 
+/* Element 的菜单项默认 line-height = 菜单高度,会被内层文字继承导致错位;
+   行高收到正常值,垂直位置交给 flex 居中。 */
 :deep(.el-sub-menu__title) {
   height: 42px;
   margin-bottom: 6px;
   padding-left: 12px;
   border-radius: 14px;
+  line-height: 1.4;
   color: var(--go-text);
   font-weight: 600;
 }
 
 :deep(.el-menu-item) {
-  height: 44px;
+  height: 56px;
   margin-bottom: 4px;
+  padding: 0 10px 0 12px !important;
   border-radius: 14px;
+  line-height: 1.4;
   background: transparent;
   color: var(--go-text);
   box-shadow: none;
@@ -1244,14 +1262,6 @@ h3 {
   align-items: center;
 }
 
-.contactlist-avatar {
-  width: 32px;
-  height: 32px;
-  margin-right: 12px;
-  border-radius: 10px;
-  object-fit: cover;
-}
-
 .newcontact-list {
   width: 100%;
   max-width: 300px;
@@ -1283,26 +1293,49 @@ h3 {
   background: #f4f7f5;
 }
 
-.contactlist-user-menu-item {
-  justify-content: center;
-  align-items: center;
-}
-
-.contactlist-user-item {
+/* 联系人/群聊行:头像 + 名称/ID 两行,左对齐(仿微信通讯录) */
+.contact-item {
   width: 100%;
-  height: 44px;
+  height: 40px;
   display: flex;
   align-items: center;
-  color: var(--go-text);
+  gap: 10px;
+  text-align: left;
 }
 
-.contactlist-user-avatar {
-  width: 32px;
-  height: 32px;
-  margin-left: 12px;
-  margin-right: 12px;
+.contact-item__avatar {
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   object-fit: cover;
+  display: block;
+}
+
+.contact-item__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.contact-item__name {
+  color: var(--go-text-strong);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contact-item__sub {
+  color: var(--go-text-soft);
+  font-size: 11px;
+  line-height: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 :deep(.el-menu-item.menu-empty-item) {

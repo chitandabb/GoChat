@@ -46,7 +46,7 @@
                     <span v-if="user.shadow" class="session-item-tag">新</span>
                   </div>
                   <div class="session-item-preview">
-                    {{ user.lastMessage || "暂无消息" }}
+                    {{ user.lastMessage || user.last_message || "暂无消息" }}
                   </div>
                 </div>
               </div>
@@ -87,7 +87,7 @@
                 <div class="session-item-main">
                   <div class="session-item-name">{{ group.group_name }}</div>
                   <div class="session-item-preview">
-                    {{ group.lastMessage || "暂无消息" }}
+                    {{ group.lastMessage || group.last_message || "暂无消息" }}
                   </div>
                 </div>
               </div>
@@ -383,11 +383,15 @@ export default {
   background: transparent;
 }
 
+/* Element 的菜单项默认 line-height = 菜单高度(≈56px),会被内层文字继承,
+   把"名字+预览"两行撑成两个 56px 行框、列表项被顶高到 100px+ 且文字错位。
+   行高收到正常值,垂直位置交给 flex 居中。 */
 :deep(.el-sub-menu__title) {
   height: 42px;
   margin-bottom: 6px;
   padding-left: 12px;
   border-radius: 14px;
+  line-height: 1.4;
   color: var(--go-text);
   font-weight: 600;
 }
@@ -397,6 +401,7 @@ export default {
   margin-bottom: 4px;
   padding: 0 10px 0 12px !important;
   border-radius: 14px;
+  line-height: 1.4;
   background: transparent;
   color: var(--go-text);
   box-shadow: none;
@@ -468,6 +473,7 @@ export default {
   color: var(--go-text-strong);
   font-size: 14px;
   font-weight: 600;
+  line-height: 20px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -486,6 +492,7 @@ export default {
 .session-item-preview {
   color: var(--go-text-muted);
   font-size: 12px;
+  line-height: 17px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -72,10 +72,11 @@ const previewItems = computed(() =>
 
 <style scoped lang="scss">
 .auth-shell {
-  width: 100vw;
-  min-height: 100vh;
+  width: 100%;
+  height: 100%;
   display: flex;
-  overflow: hidden;
+  /* 窗口级滚动已全局锁定,极矮视口下登录卡片在壳内滚动兜底 */
+  overflow-y: auto;
   background: linear-gradient(180deg, #ffffff 0%, #f7faf8 100%);
 }
 
@@ -188,8 +189,9 @@ const previewItems = computed(() =>
 .auth-shell__form-panel {
   flex: 0 0 46%;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  /* safe 居中:矮视口下卡片高于面板时顶部不会被裁掉 */
+  align-items: safe center;
+  justify-content: safe center;
   padding: 40px 32px;
   background: linear-gradient(180deg, #ffffff 0%, #f9fbfa 100%);
 }
